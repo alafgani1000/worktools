@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://pdftools.tenggoo.my.id/sitemap.xml
+Sitemap: https://worktools.my.id/sitemap.xml
