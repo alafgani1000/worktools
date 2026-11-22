@@ -26,6 +26,15 @@ const CATEGORY_TABS: { id: 'all' | NavCategoryId; label: string }[] = [
   { id: 'pipeline', label: 'AI & Otomasi' },
 ];
 
+const POPULAR_TOOL_IDS = [
+  'pdf:merge',
+  'pdf:compress',
+  'pdf:split',
+  'pdf:pdf-to-image',
+  'image:image.compress',
+  'pdf:image-to-pdf',
+];
+
 const CATEGORY_ICON_STYLE: Record<NavCategoryId, string> = {
   pdf: 'bg-[#0071E3]/10 text-[#0071E3]',
   image: 'bg-[#30B0C7]/15 text-[#008299]',
@@ -54,6 +63,14 @@ export const AllToolsHub: React.FC<AllToolsHubProps> = ({
 
   const aiChatTool = useMemo(() => tools.find((t) => t.id === 'agent:chat'), [tools]);
   const pipelineTool = useMemo(() => tools.find((t) => t.id === 'pipeline:studio'), [tools]);
+
+  const popularTools = useMemo(
+    () =>
+      POPULAR_TOOL_IDS.map((id) => tools.find((t) => t.id === id)).filter(
+        (t): t is NavToolEntry => Boolean(t),
+      ),
+    [tools],
+  );
 
   const favoriteTools = useMemo(
     () =>
@@ -87,7 +104,11 @@ export const AllToolsHub: React.FC<AllToolsHubProps> = ({
   const groupedByCategory = useMemo(() => {
     const q = query.trim().toLowerCase();
     const categories: NavCategoryId[] =
-      categoryFilter === 'all' ? ['pdf', 'image', 'data', 'utility', 'pipeline'] : [categoryFilter];
+      categoryFilter === 'all'
+        ? q
+          ? ['pdf', 'image', 'data', 'utility', 'pipeline']
+          : ['pdf', 'image', 'data', 'utility']
+        : [categoryFilter];
 
     return categories
       .map((cat) => {
@@ -163,115 +184,147 @@ export const AllToolsHub: React.FC<AllToolsHubProps> = ({
     );
   };
 
-  const showSpotlight = categoryFilter === 'all' && !query.trim();
+  const isHome = categoryFilter === 'all';
+  const hasQuery = Boolean(query.trim());
+  const showHomeExtras = isHome && !hasQuery;
   const showCategorySubGroups = categoryFilter !== 'all';
 
+  const renderSearchInput = (variant: 'hero' | 'toolbar') => {
+    const isHero = variant === 'hero';
+    return (
+      <div className={`relative w-full ${isHero ? 'max-w-xl mx-auto' : 'md:w-64 shrink-0'}`}>
+        <Search
+          size={isHero ? 18 : 14}
+          className={`absolute top-1/2 -translate-y-1/2 text-[#86868B] ${isHero ? 'left-5' : 'left-3.5'}`}
+        />
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={isHero ? 'Cari alat… misal: gabung PDF, kompres foto' : 'Cari alat...'}
+          aria-label="Cari alat"
+          className={`w-full rounded-full bg-white text-[#1D1D1F] placeholder:text-[#86868B] outline-none transition-all [&::-webkit-search-cancel-button]:hidden ${
+            isHero
+              ? 'pl-12 pr-11 py-3.5 text-[15px] border border-white/90 focus:border-[#2997FF] focus:ring-4 focus:ring-[#2997FF]/30 shadow-[0_10px_32px_rgba(0,0,0,0.45)]'
+              : 'pl-9 pr-8 py-2 text-sm border border-black/[0.08] focus:border-[#0071E3] focus:ring-4 focus:ring-[#0071E3]/15 shadow-2xs'
+          }`}
+        />
+        {query && (
+          <button
+            type="button"
+            onClick={() => setQuery('')}
+            className={`absolute top-1/2 -translate-y-1/2 text-[#86868B] hover:text-[#1D1D1F] ${isHero ? 'right-4' : 'right-3'}`}
+            aria-label="Hapus pencarian"
+          >
+            <X size={isHero ? 16 : 14} />
+          </button>
+        )}
+      </div>
+    );
+  };
+
   return (
-    <div className="w-full max-w-5xl mx-auto flex flex-col gap-8">
-      {/* Apple Editorial Hero & 2-Card Bento Spotlight */}
-      {showSpotlight ? (
-        <div className="space-y-8">
-          <section className="pt-6 pb-2 sm:pt-10 text-center space-y-4">
-            <p className="text-xs font-medium tracking-wide uppercase text-[#6E6E73]">
-              100% On-Device &middot; Privasi Penuh
-            </p>
-            <h1 className="text-3xl sm:text-5xl font-semibold tracking-[-0.03em] leading-[1.08] text-[#1D1D1F]">
-              Work Tool Super App.
-              <span className="text-[#6E6E73]"> Cepat. Privat. Lokal.</span>
-            </h1>
-            <p className="text-sm sm:text-[17px] text-[#6E6E73] max-w-2xl mx-auto leading-relaxed">
-              {tools.length} alat kerja PDF, gambar, data, dan otomasi AI yang berjalan langsung di
-              perangkat Anda tanpa unggah server.
-            </p>
-            <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
-              {aiChatTool && (
-                <button
-                  type="button"
-                  onClick={() => onSelectTool(aiChatTool)}
-                  className="bg-[#0071E3] hover:bg-[#0077ED] text-white px-5 py-2.5 rounded-full text-sm font-medium transition-colors shadow-2xs"
-                >
-                  Coba AI Chat
-                </button>
-              )}
-              {pipelineTool && (
-                <button
-                  type="button"
-                  onClick={() => onSelectTool(pipelineTool)}
-                  className="text-[#0066CC] hover:underline px-4 py-2.5 text-sm font-medium inline-flex items-center gap-1"
-                >
-                  <span>Buka Visual Pipeline</span>
-                  <span aria-hidden="true">&rsaquo;</span>
-                </button>
-              )}
+    <div className="w-full max-w-5xl mx-auto flex flex-col gap-7">
+      {/* Apple Editorial Dark Hero with Velocity Gradient & Spotlight Search */}
+      {isHome ? (
+        <section className="relative overflow-hidden rounded-[28px] sm:rounded-[32px] bg-[#0B0B0E] bg-gradient-to-b from-[#17171C] via-[#0B0B0E] to-[#050507] border border-white/[0.08] px-5 py-8 sm:px-10 sm:py-10 text-center space-y-3.5 shadow-[0_20px_50px_rgba(0,0,0,0.16)]">
+          {/* Ambient velocity light glow */}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute -top-24 left-1/4 w-72 h-48 rounded-full bg-[#00F2FE]/15 blur-3xl"
+          />
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute -top-24 right-1/4 w-72 h-48 rounded-full bg-[#FF9500]/15 blur-3xl"
+          />
+
+          <div className="relative z-10 space-y-3.5">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-white/[0.06] border border-white/[0.10] text-[11px] font-semibold tracking-wider uppercase text-[#D1D1D6]">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#00F2FE] shadow-[0_0_8px_#00F2FE]" />
+              <span>100% On-Device &middot; Privasi Penuh</span>
             </div>
-          </section>
 
-          {/* 2-Card Bento Spotlight */}
-          <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {aiChatTool && (
-              <button
-                type="button"
-                onClick={() => onSelectTool(aiChatTool)}
-                className="text-left bg-[#1D1D1F] text-white rounded-[28px] p-7 sm:p-8 flex flex-col justify-between min-h-[210px] hover:scale-[1.005] transition-transform shadow-[0_8px_28px_rgba(0,0,0,0.12)]"
-              >
-                <div>
-                  <span className="bg-gradient-to-r from-[#5AC8FA] via-[#AF52DE] to-[#FF375F] bg-clip-text text-transparent text-xs font-semibold">
-                    AI Agent &amp; Chat Studio
-                  </span>
-                  <h2 className="text-2xl font-semibold tracking-[-0.02em] mt-2">
-                    Perintahkan dengan bahasa Anda.
-                  </h2>
-                  <p className="text-sm text-[#A1A1A6] mt-2 leading-relaxed">
-                    Hubungkan OpenCode, Antigravity (Gemini), Ollama, atau jalankan instan secara
-                    offline.
-                  </p>
-                </div>
-                <span className="text-sm font-medium text-[#2997FF] mt-5 inline-flex items-center gap-1">
-                  <span>Mulai chat</span>
-                  <span aria-hidden="true">&rsaquo;</span>
-                </span>
-              </button>
-            )}
-
-            {pipelineTool && (
-              <button
-                type="button"
-                onClick={() => onSelectTool(pipelineTool)}
-                className="text-left bg-white text-[#1D1D1F] rounded-[28px] p-7 sm:p-8 border border-black/[0.05] shadow-[0_2px_16px_rgba(0,0,0,0.03)] flex flex-col justify-between min-h-[210px] hover:scale-[1.005] hover:shadow-[0_12px_32px_rgba(0,0,0,0.06)] transition-all"
-              >
-                <div>
-                  <span className="text-xs font-semibold text-[#6E6E73]">Otomasi Multi-Langkah</span>
-                  <h2 className="text-2xl font-semibold tracking-[-0.02em] mt-2">
-                    Visual Pipeline Studio.
-                  </h2>
-                  <p className="text-sm text-[#6E6E73] mt-2 leading-relaxed">
-                    Rangkai PDF, Gambar, dan ZIP secara berantai &mdash; lengkap dengan preset dan
-                    salin CLI/MCP.
-                  </p>
-                </div>
-                <span className="text-sm font-medium text-[#0066CC] mt-5 inline-flex items-center gap-1">
-                  <span>Susun pipeline</span>
-                  <span aria-hidden="true">&rsaquo;</span>
-                </span>
-              </button>
-            )}
-          </section>
-        </div>
-      ) : (
-        categoryFilter !== 'all' && (
-          <div className="pt-2 space-y-1">
-            <h1 className="text-2xl sm:text-3xl font-semibold tracking-[-0.025em] text-[#1D1D1F]">
-              {CATEGORY_LABELS[categoryFilter]}
+            <h1 className="text-3xl sm:text-[44px] font-semibold tracking-[-0.03em] leading-[1.12]">
+              <span className="bg-gradient-to-b from-white via-[#F5F5F7] to-[#AEAEB2] bg-clip-text text-transparent">
+                Work Tool Super App.
+              </span>{' '}
+              <span className="bg-gradient-to-r from-[#00F2FE] via-[#2997FF] to-[#FF9500] bg-clip-text text-transparent">
+                Cepat. Privat. Lokal.
+              </span>
             </h1>
-            <p className="text-sm text-[#6E6E73]">
-              {counts[categoryFilter]} alat lokal siap pakai di kategori ini.
+
+            <p className="text-sm sm:text-base text-[#A1A1A6] max-w-xl mx-auto leading-relaxed">
+              Olah PDF, gambar, dan dokumen langsung di perangkat Anda &mdash; tanpa unggah ke
+              server.
             </p>
+
+            <div className="pt-2">{renderSearchInput('hero')}</div>
           </div>
-        )
+        </section>
+      ) : (
+        <div className="pt-2 space-y-1">
+          <h1 className="text-2xl sm:text-3xl font-semibold tracking-[-0.025em] text-[#1D1D1F]">
+            {CATEGORY_LABELS[categoryFilter]}
+          </h1>
+          <p className="text-sm text-[#6E6E73]">
+            {counts[categoryFilter]} alat lokal siap pakai di kategori ini.
+          </p>
+        </div>
       )}
 
-      {/* macOS Segmented Control + Rounded Search */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+      {/* Popular Tools */}
+      {showHomeExtras && popularTools.length > 0 && (
+        <section className="space-y-3">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-[#86868B] px-0.5">
+            Paling Sering Dipakai
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {popularTools.map((tool) => renderToolCard(tool, 'popular-'))}
+          </div>
+        </section>
+      )}
+
+      {/* Favorites Section */}
+      {showHomeExtras && favoriteTools.length > 0 && (
+        <section className="space-y-3">
+          <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-[#C96B00] px-0.5">
+            <Star size={12} fill="currentColor" />
+            <span>Favorit ({favoriteTools.length})</span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {favoriteTools.map((tool) => renderToolCard(tool, 'fav-'))}
+          </div>
+        </section>
+      )}
+
+      {/* Recent Tools Section */}
+      {showHomeExtras && recentTools.length > 0 && (
+        <section className="space-y-2.5">
+          <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-[#86868B] px-0.5">
+            <Clock size={12} />
+            <span>Terakhir Dipakai</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {recentTools.map((tool) => {
+              const Icon = tool.icon;
+              return (
+                <button
+                  key={`recent-${tool.id}`}
+                  type="button"
+                  onClick={() => onSelectTool(tool)}
+                  className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white border border-black/[0.06] hover:border-[#0071E3]/40 hover:text-[#0071E3] text-xs font-medium text-[#1D1D1F] shadow-2xs transition-colors"
+                >
+                  <Icon size={13} className="text-[#86868B]" />
+                  <span>{tool.name}</span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* macOS Segmented Control (+ toolbar search on category pages) */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-1">
         <div className="inline-flex items-center gap-1 bg-[#E8E8ED]/80 p-1 rounded-full overflow-x-auto max-w-full no-scrollbar">
           {CATEGORY_TABS.map((tab) => {
             const active = categoryFilter === tab.id;
@@ -299,66 +352,8 @@ export const AllToolsHub: React.FC<AllToolsHubProps> = ({
           })}
         </div>
 
-        <div className="relative w-full md:w-64 shrink-0">
-          <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#86868B]" />
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Cari alat..."
-            className="w-full pl-9 pr-8 py-2 rounded-full border border-black/[0.08] bg-white text-sm text-[#1D1D1F] placeholder:text-[#86868B] focus:border-[#0071E3] focus:ring-2 focus:ring-[#0071E3]/20 outline-none transition-colors shadow-2xs"
-          />
-          {query && (
-            <button
-              type="button"
-              onClick={() => setQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-[#86868B] hover:text-[#1D1D1F]"
-              aria-label="Hapus pencarian"
-            >
-              <X size={14} />
-            </button>
-          )}
-        </div>
+        {!isHome && renderSearchInput('toolbar')}
       </div>
-
-      {/* Favorites Section */}
-      {!query.trim() && categoryFilter === 'all' && favoriteTools.length > 0 && (
-        <section className="space-y-3">
-          <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-[#C96B00] px-0.5">
-            <Star size={12} fill="currentColor" />
-            <span>Favorit ({favoriteTools.length})</span>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {favoriteTools.map((tool) => renderToolCard(tool, 'fav-'))}
-          </div>
-        </section>
-      )}
-
-      {/* Recent Tools Section */}
-      {!query.trim() && categoryFilter === 'all' && recentTools.length > 0 && (
-        <section className="space-y-2.5">
-          <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-[#86868B] px-0.5">
-            <Clock size={12} />
-            <span>Terakhir Dipakai</span>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {recentTools.map((tool) => {
-              const Icon = tool.icon;
-              return (
-                <button
-                  key={`recent-${tool.id}`}
-                  type="button"
-                  onClick={() => onSelectTool(tool)}
-                  className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white border border-black/[0.06] hover:border-[#0071E3]/40 hover:text-[#0071E3] text-xs font-medium text-[#1D1D1F] shadow-2xs transition-colors"
-                >
-                  <Icon size={13} className="text-[#86868B]" />
-                  <span>{tool.name}</span>
-                </button>
-              );
-            })}
-          </div>
-        </section>
-      )}
 
       {/* Categorized Apple Tool Grid */}
       {groupedByCategory.length === 0 ? (
@@ -395,6 +390,58 @@ export const AllToolsHub: React.FC<AllToolsHubProps> = ({
             )}
           </section>
         ))
+      )}
+
+      {/* Smart Automation Banner (moved below tools, simplified copy) */}
+      {showHomeExtras && (aiChatTool || pipelineTool) && (
+        <section className="space-y-3 pt-2">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-[#86868B] px-0.5">
+            Otomasi Pintar
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {aiChatTool && (
+              <button
+                type="button"
+                onClick={() => onSelectTool(aiChatTool)}
+                className="group text-left bg-[#1D1D1F] text-white rounded-[22px] p-5 flex items-center gap-4 hover:scale-[1.005] transition-transform shadow-[0_6px_20px_rgba(0,0,0,0.10)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2997FF]"
+              >
+                <div className="w-11 h-11 rounded-[14px] bg-white/10 flex items-center justify-center shrink-0">
+                  <aiChatTool.icon size={20} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-[15px] font-semibold tracking-[-0.01em]">AI Chat</h3>
+                  <p className="text-[13px] text-[#A1A1A6] mt-0.5">
+                    Ketik perintah, biar AI yang mengerjakan.
+                  </p>
+                </div>
+                <span aria-hidden="true" className="text-[#2997FF] text-lg group-hover:translate-x-0.5 transition-transform">
+                  &rsaquo;
+                </span>
+              </button>
+            )}
+
+            {pipelineTool && (
+              <button
+                type="button"
+                onClick={() => onSelectTool(pipelineTool)}
+                className="group text-left bg-white text-[#1D1D1F] rounded-[22px] p-5 flex items-center gap-4 border border-black/[0.05] shadow-[0_2px_12px_rgba(0,0,0,0.03)] hover:shadow-[0_10px_28px_rgba(0,0,0,0.06)] hover:scale-[1.005] transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0071E3]"
+              >
+                <div className={`w-11 h-11 rounded-[14px] flex items-center justify-center shrink-0 ${CATEGORY_ICON_STYLE.pipeline}`}>
+                  <pipelineTool.icon size={20} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-[15px] font-semibold tracking-[-0.01em]">Alur Otomatis</h3>
+                  <p className="text-[13px] text-[#6E6E73] mt-0.5">
+                    Gabungkan beberapa langkah jadi satu proses.
+                  </p>
+                </div>
+                <span aria-hidden="true" className="text-[#0066CC] text-lg group-hover:translate-x-0.5 transition-transform">
+                  &rsaquo;
+                </span>
+              </button>
+            )}
+          </div>
+        </section>
       )}
     </div>
   );
