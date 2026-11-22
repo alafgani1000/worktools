@@ -1,8 +1,25 @@
+import { tmpdir } from 'node:os';
+import { delimiter, resolve } from 'node:path';
 import { getTool, listTools } from '../core/registry.ts';
 import { runPipeline } from '../core/pipeline.ts';
 import { formatByteSize } from '../core/types.ts';
 import type { PipelineStep, ToolDefinition } from '../core/types.ts';
 import { readInputPaths, writeOutputFiles } from './fileIO.ts';
+
+function getAllowedRoots(): string[] {
+  const configured =
+    process.env.TENGGOO_WORKSPACE_ROOT || process.env.TENGGOO_ALLOWED_ROOTS || '';
+  if (configured.trim()) {
+    const sep = configured.includes(delimiter) ? delimiter : ',';
+    const parsed = configured
+      .split(sep)
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((s) => resolve(s));
+    if (parsed.length > 0) return parsed;
+  }
+  return [resolve(process.cwd()), resolve(tmpdir())];
+}
 
 interface JsonRpcRequest {
   jsonrpc?: string;
@@ -130,11 +147,12 @@ async function handleToolCall(
   args: Record<string, unknown>,
 ): Promise<{ content: { type: 'text'; text: string }[]; isError?: boolean }> {
   try {
+    const ioOptions = { allowedRoots: getAllowedRoots() };
     const inputPaths = Array.isArray(args.input_paths)
       ? args.input_paths.map((p) => String(p))
       : [];
     const outputPath = typeof args.output_path === 'string' ? args.output_path : undefined;
-    const inputFiles = await readInputPaths(inputPaths);
+    const inputFiles = await readInputPaths(inputPaths, ioOptions);
 
     if (name === 'tenggoo_pipeline_run') {
       const steps = Array.isArray(args.steps) ? (args.steps as PipelineStep[]) : [];
@@ -142,7 +160,7 @@ async function handleToolCall(
       const lastStep = steps[steps.length - 1];
       const skipWrite =
         !outputPath && lastStep && isInspectionTool(lastStep.tool, lastStep.params ?? {});
-      const written = skipWrite ? [] : await writeOutputFiles(result.files, outputPath);
+      const written = skipWrite ? [] : await writeOutputFiles(result.files, outputPath, ioOptions);
 
       return {
         content: [
@@ -184,7 +202,7 @@ async function handleToolCall(
 
     const result = await tool.execute(inputFiles, toolParams);
     const skipWrite = !outputPath && isInspectionTool(tool.id, toolParams);
-    const written = skipWrite ? [] : await writeOutputFiles(result.files, outputPath);
+    const written = skipWrite ? [] : await writeOutputFiles(result.files, outputPath, ioOptions);
 
     return {
       content: [

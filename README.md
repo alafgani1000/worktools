@@ -1,10 +1,18 @@
 # Work Tool Super App
 
-**Work Tool Super App** adalah toolkit pengolah file **100% lokal (Client-Side & On-Device)** untuk Web, Desktop (Tauri), dan **AI Agent** (Antigravity, OpenAI Codex, Claude Code, Cursor). Seluruh **38 fungsi** PDF, Image, dan Utility dibangun di atas satu *Headless Core Engine* (`src/core/`) sehingga dapat digunakan secara interaktif lewat GUI maupun dipanggil dan dikombinasikan langsung oleh AI Agent melalui **CLI (`tenggoo`)**, **MCP Server (`tenggoo-mcp`)**, dan **TypeScript SDK**.
+**Work Tool Super App** adalah toolkit pengolah file **100% lokal (Client-Side & On-Device)** untuk Web, Desktop (Tauri), **AI Chat Studio (`#ai-chat`)**, dan **AI Agent** (**OpenCode**, **Antigravity**, Codex, Claude Code, Cursor). Seluruh **38 fungsi** PDF, Image, dan Utility dibangun di atas satu *Headless Core Engine* (`src/core/`) sehingga dapat digunakan secara interaktif lewat antarmuka web maupun dipanggil langsung oleh AI Agent melalui **Chat AI**, **MCP Server (`tenggoo-mcp`)**, **CLI (`tenggoo`)**, dan **TypeScript SDK**.
 
 ---
 
-## Fitur Utama (38 Tools + Pipeline Engine)
+## Dokumentasi Lengkap
+
+- **[Panduan Integrasi AI Agent & Chat Studio](docs/AI_AGENT_INTEGRATION.md)** — Setup **AI Chat Studio** (OpenCode `opencode serve`, Antigravity/Gemini, Local LLM Ollama/LM Studio, Built-in Offline), konfigurasi **MCP Server**, **CLI**, dan *troubleshooting*.
+- **[Arsitektur & Panduan Pengembang](docs/ARCHITECTURE.md)** — Diagram arsitektur, peta direktori, konsep `VirtualFile`, navigasi hash/UI, dan cara menambah tool baru.
+- **[Katalog 38 Tool & Skema Parameter (Agent Skill)](skills/tenggoo-toolkit/SKILL.md)** — Referensi lengkap parameter seluruh tool (`pdf.*`, `image.*`, `util.*`) dan nama MCP-nya.
+
+---
+
+## Fitur Utama (38 Headless Tools + AI Chat & Pipeline)
 
 ### 1. PDF Tools (21 Headless Tools)
 - **Gabung (`pdf.merge`)** & **Pisah (`pdf.split`)** halaman PDF (per rentang atau per halaman).
@@ -34,17 +42,40 @@
 - **Pack & Unpack ZIP (`util.zip_pack`, `util.zip_unpack`)**.
 - **File Checksum (`util.hash_checksum`)**: hitung hash integritas `SHA-256`, `SHA-1`, `SHA-512`.
 
-### 4. Pipeline Studio & Productivity
-- **Saved Custom Presets & `.pipeline.json` Export/Import** di [PipelineStudio.tsx](src/components/PipelineStudio.tsx).
-- **Command Palette (`Ctrl+K`)** untuk melompat cepat ke fitur mana pun.
+### 4. AI Chat Studio, Visual Pipeline, & Antarmuka Minimalis
+- **AI Agent & Chat Studio (`#ai-chat`)**: instruksikan pemrosesan multi-file lewat obrolan bahasa alami. Mendukung **OpenCode** (`opencode serve` dengan deteksi model otomatis), **Antigravity (Google Gemini)**, **Local LLM (Ollama / LM Studio)**, serta **Built-in Offline Mode**.
+- **Visual Pipeline Studio (`#pipeline`)**: rangkai alur multi-langkah, simpan preset kustom, serta ekspor/impor `.pipeline.json`.
+- **Katalog Minimalis & Command Palette (`Ctrl+K`)**: layar beranda bersih tanpa sidebar ganda, dilengkapi filter kategori pill (`39` entri katalog termasuk AI Chat & Pipeline) dan pencarian cepat.
 
 ---
 
-## Integrasi AI Agent (Antigravity, Codex, Claude Code, Cursor)
+## Integrasi AI Agent (OpenCode, Antigravity, Codex, Claude Code, Cursor)
 
-### 1. Melalui MCP Server (`stdio` JSON-RPC 2.0)
-Mengekspose **39 MCP tools** (38 tool individu + `tenggoo_pipeline_run`):
+### 1. Melalui Chat AI di Aplikasi Web (`#ai-chat`)
+Klik **AI Chat** di header atas, lalu buka ikon pengaturan (roda gigi) untuk menghubungkan:
+- **OpenCode**: Jalankan `opencode serve --port 4096 --cors http://localhost:5174` dan pilih model yang terdeteksi otomatis.
+- **Antigravity (Google Gemini)**: Pilih model `gemini-2.0-flash` / `gemini-2.0-pro-exp-02-05` dan masukkan API Key.
+- **Local LLM**: Hubungkan ke Ollama (`http://127.0.0.1:11434/v1`) atau LM Studio (`http://127.0.0.1:1234/v1`).
+- **Built-in Offline**: Aktif langsung tanpa server eksternal.
 
+### 2. Melalui MCP Server (`stdio` JSON-RPC 2.0 — 39 MCP Tools)
+Server di [bin/tenggoo-mcp.mjs](bin/tenggoo-mcp.mjs) mengekspose **38 tool individu** + **`tenggoo_pipeline_run`**.
+
+**Untuk OpenCode (`opencode.json`):**
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "tenggoo": {
+      "type": "local",
+      "command": ["node", "D:/source_code/tenggoo_pdf/bin/tenggoo-mcp.mjs"],
+      "enabled": true
+    }
+  }
+}
+```
+
+**Untuk Antigravity, Claude Desktop, & Cursor (`mcpServers`):**
 ```json
 {
   "mcpServers": {
@@ -57,7 +88,7 @@ Mengekspose **39 MCP tools** (38 tool individu + `tenggoo_pipeline_run`):
 }
 ```
 
-### 2. Melalui CLI Global (`npm link` -> `tenggoo` / `node bin/tenggoo.mjs`)
+### 3. Melalui CLI Global (`bin/tenggoo.mjs`)
 ```bash
 # Lihat seluruh 38 tool beserta skema parameter JSON
 node bin/tenggoo.mjs list --json
@@ -75,9 +106,6 @@ node bin/tenggoo.mjs pipeline \
   -o laporan_final.pdf --json
 ```
 
-### 3. Melalui Agent Skill
-File skill resmi tersedia di [skills/tenggoo-toolkit/SKILL.md](skills/tenggoo-toolkit/SKILL.md).
-
 ---
 
 ## Menjalankan Aplikasi, Pengujian, & Build
@@ -91,7 +119,7 @@ npm install
 # Jalankan GUI Web (Vite + React)
 npm run dev
 
-# Jalankan seluruh automated test suite (38 tools + pipeline)
+# Jalankan seluruh automated test suite (38 tools + pipeline + CLI + MCP)
 npm test
 
 # Jalankan ESLint & Production Build
@@ -106,4 +134,5 @@ npm run desktop:build
 ```
 
 ## Privasi & Keamanan
-- Seluruh pemrosesan file berjalan **100% lokal di perangkat Anda** tanpa mengunggah file ke server eksternal.
+- Seluruh pemrosesan berkas (PDF, gambar, redaksi, konversi, arsip ZIP, dan mode Built-in AI Chat) berjalan **100% lokal di perangkat Anda** tanpa mengunggah file dokumen ke server eksternal.
+- Apabila Anda mengaktifkan provider AI eksternal pada **AI Chat Studio** (misalnya **Antigravity / Google Gemini API** atau endpoint **OpenCode** jarak jauh), hanya teks prompt/metadata instruksi yang dikirim ke penyedia model yang Anda pilih; API key hanya disimpan secara lokal di browser (`localStorage`).

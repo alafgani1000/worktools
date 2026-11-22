@@ -59,18 +59,18 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose,
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center pt-16 sm:pt-24 px-4 bg-slate-900/45 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-start justify-center pt-16 sm:pt-24 px-4 bg-black/30 backdrop-blur-md"
       onClick={onClose}
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Cari fitur cepat"
-        className="w-full max-w-xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden"
+        className="w-full max-w-xl bg-white/95 backdrop-blur-2xl rounded-[20px] shadow-[0_24px_64px_rgba(0,0,0,0.2)] border border-black/[0.08] overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center gap-3 px-4 py-3.5 border-b border-slate-200">
-          <Search size={18} className="text-slate-400 shrink-0" />
+        <div className="flex items-center gap-3 px-4 py-3.5 border-b border-black/[0.06]">
+          <Search size={18} className="text-[#86868B] shrink-0" />
           <input
             ref={inputRef}
             type="text"
@@ -83,21 +83,21 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose,
               }
             }}
             placeholder="Cari fitur PDF, Image, QR, Redact, Pipeline..."
-            className="flex-1 text-sm text-slate-800 placeholder:text-slate-400 outline-none bg-transparent"
+            className="flex-1 text-sm text-[#1D1D1F] placeholder:text-[#86868B] outline-none bg-transparent"
           />
           <button
             type="button"
             onClick={onClose}
-            className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+            className="p-1 rounded-full text-[#86868B] hover:text-[#1D1D1F] hover:bg-black/[0.05]"
             aria-label="Tutup pencarian"
           >
             <X size={16} />
           </button>
         </div>
 
-        <div className="max-h-96 overflow-y-auto divide-y divide-slate-100">
+        <div className="max-h-96 overflow-y-auto divide-y divide-black/[0.04]">
           {filtered.length === 0 ? (
-            <div className="p-8 text-center text-sm text-slate-500">
+            <div className="p-8 text-center text-sm text-[#6E6E73]">
               Tidak ada fitur yang cocok dengan &ldquo;{query}&rdquo;.
             </div>
           ) : (
@@ -106,18 +106,18 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose,
                 key={item.id}
                 type="button"
                 onClick={() => handleSelectItem(item)}
-                className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-indigo-50/70 transition-colors group"
+                className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-[#0071E3]/[0.08] transition-colors group"
               >
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 group-hover:bg-indigo-100 group-hover:text-indigo-700">
+                    <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-black/[0.05] text-[#6E6E73] group-hover:bg-[#0071E3]/15 group-hover:text-[#0071E3]">
                       {item.categoryLabel}
                     </span>
-                    <span className="text-sm font-bold text-slate-800 truncate">{item.title}</span>
+                    <span className="text-sm font-semibold text-[#1D1D1F] truncate">{item.title}</span>
                   </div>
-                  <p className="text-xs text-slate-500 mt-0.5 truncate">{item.subtitle}</p>
+                  <p className="text-xs text-[#6E6E73] mt-0.5 truncate">{item.subtitle}</p>
                 </div>
-                <ArrowRight size={15} className="text-slate-300 group-hover:text-indigo-600 shrink-0" />
+                <ArrowRight size={15} className="text-[#86868B] group-hover:text-[#0071E3] shrink-0" />
               </button>
             ))
           )}

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import {
   ArrowRight,
+  Bot,
   CheckCircle2,
   ChevronDown,
   CircleQuestionMark,
@@ -74,15 +75,15 @@ export const PrivacyPolicyView: React.FC<PrivacyPolicyViewProps> = ({ onOpenFaq 
   return (
     <div className="w-full max-w-4xl mx-auto flex flex-col gap-6 py-2">
       {/* Header Kebijakan Privasi */}
-      <div className="bg-white rounded-2xl border border-slate-200/90 p-6 sm:p-8 shadow-sm">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200/80 text-emerald-800 text-xs font-semibold mb-3">
+      <div className="bg-white rounded-[24px] border border-black/[0.05] p-6 sm:p-8 shadow-[0_2px_16px_rgba(0,0,0,0.03)]">
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-medium mb-3">
           <ShieldCheck size={14} className="text-emerald-600" />
           <span>Privacy &amp; Policy</span>
         </div>
-        <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+        <h1 className="text-2xl sm:text-3xl font-semibold text-[#1D1D1F] tracking-[-0.025em]">
           Kebijakan Privasi &amp; Keamanan Data Lokal
         </h1>
-        <p className="text-sm sm:text-base text-slate-600 mt-2 max-w-2xl leading-relaxed">
+        <p className="text-sm sm:text-base text-[#6E6E73] mt-2 max-w-2xl leading-relaxed">
           Semua manipulasi PDF, gambar, penyensoran PII, serta otomasi pipeline di Work Tool Super App
           berjalan langsung di perangkat Anda tanpa pengunggahan ke server cloud eksternal.
         </p>
@@ -94,15 +95,15 @@ export const PrivacyPolicyView: React.FC<PrivacyPolicyViewProps> = ({ onOpenFaq 
             return (
               <div
                 key={pillar.title}
-                className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 flex flex-col gap-2.5"
+                className="rounded-[18px] border border-black/[0.05] bg-[#F5F5F7]/70 p-4 flex flex-col gap-2.5"
               >
                 <div className="flex items-center gap-2.5">
-                  <div className={`p-2 rounded-lg border ${pillar.accent}`}>
+                  <div className={`p-2 rounded-[10px] border ${pillar.accent}`}>
                     <Icon size={17} />
                   </div>
-                  <h2 className="text-sm font-bold text-slate-900">{pillar.title}</h2>
+                  <h2 className="text-sm font-semibold text-[#1D1D1F]">{pillar.title}</h2>
                 </div>
-                <p className="text-xs text-slate-600 leading-relaxed">{pillar.description}</p>
+                <p className="text-xs text-[#6E6E73] leading-relaxed">{pillar.description}</p>
               </div>
             );
           })}
@@ -110,12 +111,12 @@ export const PrivacyPolicyView: React.FC<PrivacyPolicyViewProps> = ({ onOpenFaq 
       </div>
 
       {/* Komitmen Perlindungan Data & Dokumen */}
-      <section className="bg-white rounded-2xl border border-slate-200/90 p-6 sm:p-8 shadow-sm space-y-4">
+      <section className="bg-white rounded-[24px] border border-black/[0.05] p-6 sm:p-8 shadow-[0_2px_16px_rgba(0,0,0,0.03)] space-y-4">
         <div>
-          <h2 className="text-lg font-bold text-slate-900 tracking-tight">
+          <h2 className="text-lg font-semibold text-[#1D1D1F] tracking-[-0.015em]">
             Komitmen Perlindungan Data &amp; Dokumen
           </h2>
-          <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
+          <p className="text-xs sm:text-sm text-[#6E6E73] mt-0.5">
             Standar teknis bagaimana Work Tool Super App menangani file, metadata, dan kata sandi Anda.
           </p>
         </div>
@@ -126,13 +127,13 @@ export const PrivacyPolicyView: React.FC<PrivacyPolicyViewProps> = ({ onOpenFaq 
             return (
               <div
                 key={item.title}
-                className="rounded-xl border border-slate-200/80 p-4 space-y-2 bg-white"
+                className="rounded-[18px] border border-black/[0.05] p-4 space-y-2 bg-[#F5F5F7]/40"
               >
-                <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-700 flex items-center justify-center">
+                <div className="w-8 h-8 rounded-[10px] bg-[#0071E3]/10 text-[#0071E3] flex items-center justify-center">
                   <Icon size={16} />
                 </div>
-                <h3 className="text-sm font-bold text-slate-900 leading-snug">{item.title}</h3>
-                <p className="text-xs text-slate-600 leading-relaxed">{item.description}</p>
+                <h3 className="text-sm font-semibold text-[#1D1D1F] leading-snug">{item.title}</h3>
+                <p className="text-xs text-[#6E6E73] leading-relaxed">{item.description}</p>
               </div>
             );
           })}
@@ -140,13 +141,13 @@ export const PrivacyPolicyView: React.FC<PrivacyPolicyViewProps> = ({ onOpenFaq 
       </section>
 
       {/* 3 Cara Membuktikan Secara Transparan */}
-      <section className="bg-white rounded-2xl border border-slate-200/90 p-6 sm:p-8 shadow-sm space-y-4">
+      <section className="bg-white rounded-[24px] border border-black/[0.05] p-6 sm:p-8 shadow-[0_2px_16px_rgba(0,0,0,0.03)] space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h2 className="text-lg font-bold text-slate-900 tracking-tight">
+            <h2 className="text-lg font-semibold text-[#1D1D1F] tracking-[-0.015em]">
               3 Cara Membuktikan Secara Transparan
             </h2>
-            <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
+            <p className="text-xs sm:text-sm text-[#6E6E73] mt-0.5">
               Anda dapat memverifikasi sendiri bahwa tidak ada file yang dikirim ke luar perangkat.
             </p>
           </div>
@@ -154,7 +155,7 @@ export const PrivacyPolicyView: React.FC<PrivacyPolicyViewProps> = ({ onOpenFaq 
             <button
               type="button"
               onClick={onOpenFaq}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-sm transition-colors self-start sm:self-auto"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-[#0071E3] hover:bg-[#0077ED] text-white text-xs font-medium shadow-2xs transition-colors self-start sm:self-auto"
             >
               <CircleQuestionMark size={14} />
               <span>Buka Menu Khusus FAQ</span>
@@ -194,7 +195,7 @@ export const PrivacyPolicyView: React.FC<PrivacyPolicyViewProps> = ({ onOpenFaq 
             <p className="leading-relaxed">
               Seluruh kode sumber terbuka untuk diaudit langsung di{' '}
               <a
-                href="https://github.com/alafgani1000/tenggoo_pdf"
+                href="https://github.com/alafgani1000/worktools"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-indigo-600 hover:text-indigo-800 underline inline-flex items-center gap-0.5 font-semibold"
@@ -268,7 +269,7 @@ export const FAQSection: React.FC<FAQSectionProps> = ({ onOpenPrivacy }) => {
               <strong className="text-slate-800">Kode Terbuka (Open Source):</strong> Seluruh kode
               sumber aplikasi terbuka di{' '}
               <a
-                href="https://github.com/alafgani1000/tenggoo_pdf"
+                href="https://github.com/alafgani1000/worktools"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-indigo-600 hover:text-indigo-800 underline inline-flex items-center gap-0.5 font-medium"
@@ -337,21 +338,38 @@ export const FAQSection: React.FC<FAQSectionProps> = ({ onOpenPrivacy }) => {
         </p>
       ),
     },
+    {
+      id: 'item-7',
+      question: 'Bagaimana keamanan data saat memakai fitur AI Chat Studio?',
+      icon: Bot,
+      answer: (
+        <p>
+          <strong className="text-slate-900 font-semibold">Tetap terkendali sepenuhnya.</strong> Mode{' '}
+          <strong>Built-in Offline</strong> dan <strong>Local LLM (Ollama / LM Studio)</strong>{' '}
+          berjalan 100% di perangkat Anda tanpa keluar ke internet. Apabila Anda memilih provider
+          eksternal opsional (seperti <strong>Antigravity / Google Gemini API</strong> atau server{' '}
+          <strong>OpenCode</strong> jarak jauh), hanya teks prompt dan metadata perintah yang dikirim
+          untuk merancang langkah tool &mdash; berkas PDF maupun gambar Anda tetap diolah di memori
+          browser dan tidak pernah diunggah. API Key hanya disimpan di <code>localStorage</code>{' '}
+          browser Anda.
+        </p>
+      ),
+    },
   ];
 
   return (
     <div className="w-full max-w-4xl mx-auto flex flex-col gap-6 py-2">
       {/* Header Menu Khusus FAQ */}
-      <div className="bg-white rounded-2xl border border-slate-200/90 p-6 sm:p-7 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="bg-white rounded-[24px] border border-black/[0.05] p-6 sm:p-7 shadow-[0_2px_16px_rgba(0,0,0,0.03)] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-50 border border-indigo-200/80 text-indigo-700 text-xs font-semibold mb-2.5">
-            <CircleQuestionMark size={14} className="text-indigo-600" />
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#0071E3]/10 text-[#0071E3] text-xs font-medium mb-2.5">
+            <CircleQuestionMark size={14} />
             <span>Menu Khusus FAQ</span>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+          <h1 className="text-2xl sm:text-3xl font-semibold text-[#1D1D1F] tracking-[-0.025em]">
             FAQ — Pertanyaan Umum seputar Keamanan
           </h1>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1.5 max-w-2xl">
+          <p className="text-xs sm:text-sm text-[#6E6E73] mt-1.5 max-w-2xl">
             Jawaban lengkap terkait keamanan dokumen, pemrosesan offline, kata sandi, dan teknologi
             client-side di Work Tool Super App.
           </p>
@@ -361,7 +379,7 @@ export const FAQSection: React.FC<FAQSectionProps> = ({ onOpenPrivacy }) => {
           <button
             type="button"
             onClick={onOpenPrivacy}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 text-xs font-semibold transition-colors shrink-0 self-start sm:self-center"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-[#F5F5F7] hover:bg-black/[0.06] border border-black/[0.08] text-[#1D1D1F] text-xs font-medium transition-colors shrink-0 self-start sm:self-center"
           >
             <ShieldCheck size={14} className="text-emerald-600" />
             <span>Lihat Privacy &amp; Policy</span>
@@ -378,30 +396,30 @@ export const FAQSection: React.FC<FAQSectionProps> = ({ onOpenPrivacy }) => {
           return (
             <div
               key={faq.id}
-              className="bg-white rounded-xl border border-slate-200/90 shadow-sm transition-colors overflow-hidden hover:border-slate-300"
+              className="bg-white rounded-[18px] border border-black/[0.05] shadow-[0_2px_10px_rgba(0,0,0,0.02)] transition-colors overflow-hidden hover:border-black/[0.1]"
             >
               <button
                 type="button"
                 onClick={() => toggleItem(faq.id)}
-                className="w-full text-left px-4 sm:px-5 py-3.5 sm:py-4 flex items-center justify-between gap-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                className="w-full text-left px-4 sm:px-5 py-3.5 sm:py-4 flex items-center justify-between gap-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0071E3]"
                 aria-expanded={isOpen}
               >
                 <div className="flex items-center gap-3">
                   <div
-                    className={`p-2 rounded-lg shrink-0 transition-colors ${
-                      isOpen ? 'bg-indigo-50 text-indigo-700' : 'bg-slate-100 text-slate-600'
+                    className={`p-2 rounded-[10px] shrink-0 transition-colors ${
+                      isOpen ? 'bg-[#0071E3]/10 text-[#0071E3]' : 'bg-[#F5F5F7] text-[#6E6E73]'
                     }`}
                   >
                     <Icon size={17} />
                   </div>
-                  <span className="font-semibold text-slate-800 text-sm sm:text-base leading-snug">
+                  <span className="font-semibold text-[#1D1D1F] text-sm sm:text-base leading-snug">
                     {faq.question}
                   </span>
                 </div>
                 <ChevronDown
                   size={18}
-                  className={`text-slate-400 shrink-0 transition-transform duration-200 ${
-                    isOpen ? 'rotate-180 text-indigo-600' : ''
+                  className={`text-[#86868B] shrink-0 transition-transform duration-200 ${
+                    isOpen ? 'rotate-180 text-[#0071E3]' : ''
                   }`}
                 />
               </button>

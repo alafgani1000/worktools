@@ -75,6 +75,7 @@ export async function loadPdfDocument(
     const { pdfjsLib } = await import('../../utils/pdfjs.ts');
     const task = pdfjsLib.getDocument({
       data: dataCopy,
+      isEvalSupported: false,
       ...(password !== undefined ? { password } : {}),
     });
     return (await task.promise) as unknown as PdfDocumentLike;
@@ -87,6 +88,7 @@ export async function loadPdfDocument(
   const task = pdfjs.getDocument({
     data: dataCopy,
     verbosity: 0,
+    isEvalSupported: false,
     ...(standardFontDataUrl ? { standardFontDataUrl } : {}),
     ...(password !== undefined ? { password } : {}),
   });

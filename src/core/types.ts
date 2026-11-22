@@ -147,6 +147,31 @@ export function guessMimeType(filename: string): string {
   }
 }
 
+export function sanitizeFileName(name: string, fallback: string = 'output'): string {
+  const withoutControls = Array.from(String(name ?? ''))
+    .filter((ch) => {
+      const code = ch.charCodeAt(0);
+      return code >= 32 && code !== 127;
+    })
+    .join('');
+
+  // Split on both POSIX and Windows path separators to prevent path traversal / Zip Slip
+  const segments = withoutControls
+    .replace(/\\/g, '/')
+    .split('/')
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  let base = segments.length > 0 ? segments[segments.length - 1] : '';
+  // Strip Windows drive prefix (e.g. "C:foo.pdf" or "C:")
+  base = base.replace(/^[a-zA-Z]:/, '').replace(/[<>:"|?*]/g, '_').trim();
+
+  if (!base || base === '.' || base === '..') {
+    return fallback;
+  }
+  return base;
+}
+
 export function getBaseName(filename: string): string {
   return filename.replace(/\.[^/.]+$/, '');
 }

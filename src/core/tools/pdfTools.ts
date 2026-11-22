@@ -17,6 +17,7 @@ import {
   isPdfFile,
   parsePageRange,
   replaceExtension,
+  sanitizeFileName,
 } from '../types.ts';
 import type { ToolDefinition, VirtualFile } from '../types.ts';
 import {
@@ -33,7 +34,8 @@ import {
 } from '../runtime/pdfjsAdapter.ts';
 
 function ensurePdfFilename(name: string): string {
-  return name.toLowerCase().endsWith('.pdf') ? name : `${name}.pdf`;
+  const safe = sanitizeFileName(name, 'document');
+  return safe.toLowerCase().endsWith('.pdf') ? safe : `${safe}.pdf`;
 }
 
 function isPngBytes(bytes: Uint8Array): boolean {
@@ -1728,6 +1730,34 @@ export const pdfCropMarginsTool: ToolDefinition<{
   },
 };
 
+function maskRedactedTerm(raw: string): string {
+  const val = raw.trim();
+  if (!val) return '****';
+  const atIdx = val.indexOf('@');
+  if (atIdx > 0 && atIdx < val.length - 1) {
+    return `${val[0]}***@${val.slice(atIdx + 1)}`;
+  }
+  if (val.length >= 6) {
+    return `${val.slice(0, 2)}****${val.slice(-2)}`;
+  }
+  return '****';
+}
+
+function assertSafeRegex(pattern: string): void {
+  if (pattern.length > 200) {
+    throw new Error('Regex pattern exceeds maximum allowed length (200 characters).');
+  }
+  if (
+    /\([^)]*[+*][^)]*\)[+*?{]/.test(pattern) ||
+    /([+*?])\1/.test(pattern) ||
+    /\\[1-9]/.test(pattern)
+  ) {
+    throw new Error(
+      'Unsafe regex pattern rejected to prevent catastrophic backtracking (ReDoS). Simplify nested quantifiers or backreferences.',
+    );
+  }
+}
+
 export const pdfRedactTextTool: ToolDefinition<{
   query?: string;
   isRegex?: boolean;
@@ -1797,9 +1827,17 @@ export const pdfRedactTextTool: ToolDefinition<{
 
     const patterns: RegExp[] = [];
     if (query) {
+      if (isRegex) {
+        assertSafeRegex(query);
+      }
       const flags = caseSensitive ? 'g' : 'gi';
       const source = isRegex ? query : query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      patterns.push(new RegExp(source, flags));
+      try {
+        patterns.push(new RegExp(source, flags));
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        throw new Error(`Invalid regex pattern in pdf.redact_text: ${msg}`, { cause: err });
+      }
     }
     if (presetPattern === 'nik' || presetPattern === 'all_pii') {
       patterns.push(/\b\d{16}\b/g);
@@ -1872,7 +1910,7 @@ export const pdfRedactTextTool: ToolDefinition<{
             }
 
             redactedMatches++;
-            if (matchedTerms.length < 25) matchedTerms.push(match[0]);
+            if (matchedTerms.length < 25) matchedTerms.push(maskRedactedTerm(match[0]));
             match = regex.exec(item.str);
           }
         }

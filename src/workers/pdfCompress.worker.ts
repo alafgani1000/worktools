@@ -64,6 +64,7 @@ workerScope.onmessage = async (event: MessageEvent<CompressRequest>) => {
     gsModule.FS.writeFile('input.pdf', new Uint8Array(fileBuffer));
 
     const args = [
+      '-dSAFER',
       '-sDEVICE=pdfwrite',
       '-dCompatibilityLevel=1.4',
       `-dPDFSETTINGS=${cfg.pdfSetting}`,

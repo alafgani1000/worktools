@@ -5,6 +5,7 @@ import {
   getBaseName,
   guessMimeType,
   replaceExtension,
+  sanitizeFileName,
 } from '../types.ts';
 import type { ToolDefinition, VirtualFile } from '../types.ts';
 import { createCanvasSurface } from '../runtime/canvasAdapter.ts';
@@ -806,10 +807,11 @@ export const utilMdToPdfTool: ToolDefinition<{
     }
 
     const pdfBytes = await doc.save();
-    const finalName = derivedOutName
-      ? derivedOutName.toLowerCase().endsWith('.pdf')
-        ? derivedOutName
-        : `${derivedOutName}.pdf`
+    const sanitizedOut = derivedOutName ? sanitizeFileName(derivedOutName, 'document.pdf') : '';
+    const finalName = sanitizedOut
+      ? sanitizedOut.toLowerCase().endsWith('.pdf')
+        ? sanitizedOut
+        : `${sanitizedOut}.pdf`
       : 'document.pdf';
     context?.onProgress?.(100, 'Complete');
 
@@ -864,7 +866,7 @@ export const utilZipPackTool: ToolDefinition<{ archiveName?: string }> = {
     }
 
     const zipBytes = await zip.generateAsync({ type: 'uint8array' });
-    const rawArchive = params.archiveName?.trim() || 'tenggoo_bundle.zip';
+    const rawArchive = sanitizeFileName(params.archiveName?.trim() || 'tenggoo_bundle.zip', 'tenggoo_bundle.zip');
     const archiveName = rawArchive.toLowerCase().endsWith('.zip') ? rawArchive : `${rawArchive}.zip`;
     context?.onProgress?.(100, 'Complete');
 
@@ -909,29 +911,47 @@ export const utilZipUnpackTool: ToolDefinition<{ filterExtensions?: string }> = 
           .filter(Boolean)
       : null;
 
+    const MAX_ZIP_ENTRIES = 500;
+    const MAX_ZIP_EXTRACTED_BYTES = 250 * 1024 * 1024;
     const archive = await JSZip.loadAsync(zipFile.bytes);
     const extracted: VirtualFile[] = [];
+    let totalExtractedBytes = 0;
 
-    const entries = Object.values(archive.files);
-    for (let i = 0; i < entries.length; i++) {
-      const entry = entries[i];
-      if (entry.dir) continue;
-      if (entry.name.startsWith('__MACOSX/')) continue;
+    const fileEntries = Object.values(archive.files).filter(
+      (entry) =>
+        !entry.dir &&
+        !entry.name.startsWith('__MACOSX/') &&
+        !entry.name.startsWith('__MACOSX\\'),
+    );
+    if (fileEntries.length > MAX_ZIP_ENTRIES) {
+      throw new Error(
+        `ZIP archive exceeds maximum allowed file entries (${MAX_ZIP_ENTRIES}). Found ${fileEntries.length} entries.`,
+      );
+    }
 
-      const cleanName = entry.name.split('/').pop() || entry.name;
+    for (let i = 0; i < fileEntries.length; i++) {
+      const entry = fileEntries[i];
+      const cleanName = sanitizeFileName(entry.name, `extracted_${i + 1}`);
       const ext = cleanName.split('.').pop()?.toLowerCase() ?? '';
       if (extAllowlist && extAllowlist.length > 0 && !extAllowlist.includes(ext)) {
         continue;
       }
 
       const bytes = await entry.async('uint8array');
+      totalExtractedBytes += bytes.byteLength;
+      if (totalExtractedBytes > MAX_ZIP_EXTRACTED_BYTES) {
+        throw new Error(
+          `Extracted ZIP size exceeds safety limit (${formatByteSize(MAX_ZIP_EXTRACTED_BYTES)}). Aborting to prevent memory exhaustion.`,
+        );
+      }
+
       extracted.push({
         name: cleanName,
         mimeType: guessMimeType(cleanName),
         bytes,
         metadata: { zipEntryPath: entry.name, sourceArchive: getBaseName(zipFile.name) },
       });
-      context?.onProgress?.(Math.round(((i + 1) / entries.length) * 100));
+      context?.onProgress?.(Math.round(((i + 1) / fileEntries.length) * 100));
     }
 
     if (extracted.length === 0) {
@@ -1237,7 +1257,7 @@ export const utilTableToPdfTool: ToolDefinition<{
     }
 
     const outBytes = await doc.save();
-    const rawName = params.outputName?.trim() || 'table_report.pdf';
+    const rawName = sanitizeFileName(params.outputName?.trim() || 'table_report.pdf', 'table_report.pdf');
     const outName = rawName.toLowerCase().endsWith('.pdf') ? rawName : `${rawName}.pdf`;
     context?.onProgress?.(100, 'Complete');
 

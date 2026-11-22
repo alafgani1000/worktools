@@ -7,11 +7,19 @@ export default {
   theme: {
     extend: {
       colors: {
-        primary: "#6366f1", // indigo-500
+        primary: "#0071E3", // Apple Blue
         secondary: "#ec4899", // pink-500
       },
       fontFamily: {
-        sans: ['Inter', 'sans-serif'],
+        sans: [
+          '-apple-system',
+          'BlinkMacSystemFont',
+          '"SF Pro Display"',
+          '"SF Pro Text"',
+          '"Inter"',
+          'system-ui',
+          'sans-serif',
+        ],
       }
     },
   },

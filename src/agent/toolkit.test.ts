@@ -851,3 +851,114 @@ test('Integration: MCP Server (bin/tenggoo-mcp.mjs) JSON-RPC 2.0 protocol, 39 to
     await rm(tmpDir, { recursive: true, force: true });
   }
 });
+
+test('Security: Zip Slip, Path Traversal, MCP Workspace Sandbox, PII Masking, ReDoS & Pipeline Limits', async () => {
+  // 1. util.zip_unpack neutralizes POSIX and Windows Zip Slip paths
+  const JSZipMod = (await import('jszip')).default;
+  const evilZip = new JSZipMod();
+  evilZip.file('../../evil.txt', 'posix-slip');
+  evilZip.file('..\\..\\evil_win.txt', 'win-slip');
+  const evilZipBytes = await evilZip.generateAsync({ type: 'uint8array' });
+  const unpacked = await getTool('util.zip_unpack')!.execute(
+    [{ name: 'slip.zip', mimeType: 'application/zip', bytes: evilZipBytes }],
+    {},
+  );
+  const unpackedNames = unpacked.files.map((f) => f.name);
+  assert.deepEqual(unpackedNames, ['evil.txt', 'evil_win.txt']);
+  assert.ok(unpackedNames.every((n) => !n.includes('..') && !n.includes('/') && !n.includes('\\')));
+
+  // 2. Output filenames strip traversal segments
+  const md1 = await getTool('util.md_to_pdf')!.execute([], {
+    markdown: '# A',
+    outputName: '../../escape.pdf',
+  });
+  assert.equal(md1.files[0].name, 'escape.pdf');
+
+  const merged = await getTool('pdf.merge')!.execute([md1.files[0], md1.files[0]], {
+    outputName: '../../escape_merge.pdf',
+  });
+  assert.equal(merged.files[0].name, 'escape_merge.pdf');
+
+  const packed = await getTool('util.zip_pack')!.execute([md1.files[0]], {
+    archiveName: '..\\..\\escape.zip',
+  });
+  assert.equal(packed.files[0].name, 'escape.zip');
+
+  // 3. writeOutputFiles enforces allowedRoots sandbox
+  const { writeOutputFiles } = await import('./fileIO.ts');
+  const sandboxDir = await mkdtemp(join(tmpdir(), 'tenggoo-sec-sandbox-'));
+  try {
+    const outsidePath = resolve(process.cwd(), 'forbidden_outside_write.pdf');
+    await assert.rejects(
+      () => writeOutputFiles([md1.files[0]], outsidePath, { allowedRoots: [sandboxDir] }),
+      /Access denied/,
+    );
+  } finally {
+    await rm(sandboxDir, { recursive: true, force: true });
+  }
+
+  // 4. pdf.redact_text masks PII in metadata and rejects ReDoS regex
+  const piiDoc = await getTool('util.md_to_pdf')!.execute([], {
+    markdown: '# Data\n\nNIK: 3171234567890001\nEmail: budi.rahasia@example.com',
+  });
+  const redacted = await getTool('pdf.redact_text')!.execute(piiDoc.files, {
+    presetPattern: 'all_pii',
+    burnIn: false,
+  });
+  const samples = (redacted.metadata?.sampleMatchedTerms as string[]) ?? [];
+  assert.ok(samples.length >= 2);
+  assert.ok(samples.every((s) => !s.includes('3171234567890001') && !s.includes('budi.rahasia@example.com')));
+
+  await assert.rejects(
+    () =>
+      getTool('pdf.redact_text')!.execute(piiDoc.files, {
+        query: '(a+)+$',
+        isRegex: true,
+      }),
+    /ReDoS|Unsafe regex/i,
+  );
+
+  // 5. runPipeline enforces max step limit (25)
+  const { runPipeline } = await import('../core/pipeline.ts');
+  const excessiveSteps = Array.from({ length: 26 }, () => ({ tool: 'util.qr_generate', params: { text: 'x' } }));
+  await assert.rejects(() => runPipeline([], excessiveSteps), /maximum allowed steps/i);
+
+  // 6. MCP server enforces TENGGOO_WORKSPACE_ROOT sandbox
+  const mcpBin = resolve(process.cwd(), 'bin/tenggoo-mcp.mjs');
+  const tmpRoot = await mkdtemp(join(tmpdir(), 'tenggoo-mcp-sec-'));
+  try {
+    const forbiddenTarget = resolve(process.cwd(), 'mcp_forbidden_outside.png');
+    const req = {
+      jsonrpc: '2.0',
+      id: 99,
+      method: 'tools/call',
+      params: {
+        name: 'tenggoo_util_qr_generate',
+        arguments: { text: 'https://tenggoo.my.id', output_path: forbiddenTarget },
+      },
+    };
+    const resp = await new Promise<Record<string, unknown>>((resolvePromise, rejectPromise) => {
+      const child = spawn(process.execPath, [mcpBin], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: { ...process.env, TENGGOO_WORKSPACE_ROOT: tmpRoot },
+      });
+      let stdoutBuf = '';
+      child.stdout.setEncoding('utf-8');
+      child.stdout.on('data', (chunk: string) => {
+        stdoutBuf += chunk;
+      });
+      child.on('error', rejectPromise);
+      child.on('close', () => {
+        const line = stdoutBuf.trim().split('\n')[0];
+        resolvePromise(JSON.parse(line) as Record<string, unknown>);
+      });
+      child.stdin.write(`${JSON.stringify(req)}\n`);
+      child.stdin.end();
+    });
+    const callRes = resp.result as { isError?: boolean; content: { text: string }[] };
+    assert.equal(callRes.isError, true);
+    assert.match(callRes.content[0].text, /Access denied/);
+  } finally {
+    await rm(tmpRoot, { recursive: true, force: true });
+  }
+});

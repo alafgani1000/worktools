@@ -1,18 +1,6 @@
 import React, { useMemo, useState } from 'react';
+import { Clock, Search, Star, X } from 'lucide-react';
 import {
-  Archive,
-  Bot,
-  Clock,
-  FileSpreadsheet,
-  FileText,
-  Image as ImageIcon,
-  Layers,
-  Search,
-  Star,
-  X,
-} from 'lucide-react';
-import {
-  CATEGORY_FILE_HINTS,
   CATEGORY_LABELS,
   getToolsByCategory,
   type NavCategoryId,
@@ -29,56 +17,22 @@ interface AllToolsHubProps {
   onToggleFavorite: (toolId: string) => void;
 }
 
-const DOMAIN_TABS: {
-  id: 'all' | NavCategoryId;
-  label: string;
-  desc: string;
-  icon: React.ComponentType<{ size?: number; className?: string }>;
-  accent: string;
-}[] = [
-  {
-    id: 'all',
-    label: 'Semua Fitur',
-    desc: 'Seluruh jenis file & otomasi',
-    icon: Layers,
-    accent: 'text-slate-700 bg-slate-100',
-  },
-  {
-    id: 'pdf',
-    label: CATEGORY_LABELS.pdf,
-    desc: CATEGORY_FILE_HINTS.pdf,
-    icon: FileText,
-    accent: 'text-indigo-700 bg-indigo-50',
-  },
-  {
-    id: 'image',
-    label: CATEGORY_LABELS.image,
-    desc: CATEGORY_FILE_HINTS.image,
-    icon: ImageIcon,
-    accent: 'text-teal-700 bg-teal-50',
-  },
-  {
-    id: 'data',
-    label: CATEGORY_LABELS.data,
-    desc: CATEGORY_FILE_HINTS.data,
-    icon: FileSpreadsheet,
-    accent: 'text-amber-700 bg-amber-50',
-  },
-  {
-    id: 'utility',
-    label: CATEGORY_LABELS.utility,
-    desc: CATEGORY_FILE_HINTS.utility,
-    icon: Archive,
-    accent: 'text-orange-700 bg-orange-50',
-  },
-  {
-    id: 'pipeline',
-    label: CATEGORY_LABELS.pipeline,
-    desc: CATEGORY_FILE_HINTS.pipeline,
-    icon: Bot,
-    accent: 'text-purple-700 bg-purple-50',
-  },
+const CATEGORY_TABS: { id: 'all' | NavCategoryId; label: string }[] = [
+  { id: 'all', label: 'Semua' },
+  { id: 'pdf', label: 'File PDF' },
+  { id: 'image', label: 'File Gambar' },
+  { id: 'data', label: 'Teks & Data' },
+  { id: 'utility', label: 'Arsip & File' },
+  { id: 'pipeline', label: 'AI & Otomasi' },
 ];
+
+const CATEGORY_ICON_STYLE: Record<NavCategoryId, string> = {
+  pdf: 'bg-[#0071E3]/10 text-[#0071E3]',
+  image: 'bg-[#30B0C7]/15 text-[#008299]',
+  data: 'bg-[#FF9500]/12 text-[#C96B00]',
+  utility: 'bg-[#1D1D1F]/[0.06] text-[#1D1D1F]',
+  pipeline: 'bg-[#AF52DE]/12 text-[#8944AB]',
+};
 
 export const AllToolsHub: React.FC<AllToolsHubProps> = ({
   tools,
@@ -97,6 +51,9 @@ export const AllToolsHub: React.FC<AllToolsHubProps> = ({
     setInternalCategory(cat);
     onCategoryChange?.(cat);
   };
+
+  const aiChatTool = useMemo(() => tools.find((t) => t.id === 'agent:chat'), [tools]);
+  const pipelineTool = useMemo(() => tools.find((t) => t.id === 'pipeline:studio'), [tools]);
 
   const favoriteTools = useMemo(
     () =>
@@ -136,7 +93,7 @@ export const AllToolsHub: React.FC<AllToolsHubProps> = ({
       .map((cat) => {
         const catTools = getToolsByCategory(cat).filter((tool) => {
           if (!q) return true;
-          return `${tool.name} ${tool.shortDesc} ${tool.handledFiles} ${tool.subGroup} ${CATEGORY_LABELS[cat]} ${CATEGORY_FILE_HINTS[cat]}`
+          return `${tool.name} ${tool.shortDesc} ${tool.handledFiles} ${tool.subGroup} ${CATEGORY_LABELS[cat]}`
             .toLowerCase()
             .includes(q);
         });
@@ -150,11 +107,12 @@ export const AllToolsHub: React.FC<AllToolsHubProps> = ({
           }
           group.items.push(item);
         }
+
         return {
           category: cat,
           label: CATEGORY_LABELS[cat],
-          fileHint: CATEGORY_FILE_HINTS[cat],
           count: catTools.length,
+          items: catTools,
           subGroups,
         };
       })
@@ -168,31 +126,23 @@ export const AllToolsHub: React.FC<AllToolsHubProps> = ({
     return (
       <div
         key={`${keyPrefix}${tool.id}`}
-        className="group relative bg-white rounded-xl border border-slate-200/90 hover:border-indigo-300 hover:shadow-sm transition-all overflow-hidden"
+        className="group relative bg-white rounded-[20px] border border-black/[0.04] shadow-[0_2px_10px_rgba(0,0,0,0.025)] hover:shadow-[0_10px_28px_rgba(0,0,0,0.07)] hover:-translate-y-0.5 transition-all duration-200 overflow-hidden"
       >
         <button
           type="button"
           onClick={() => onSelectTool(tool)}
-          className="w-full h-full text-left p-4 pr-10 flex flex-col gap-2.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"
+          className="w-full h-full text-left p-4 pr-10 flex items-center gap-3.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#0071E3]"
         >
-          <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-lg border shrink-0 ${tool.badgeColor}`}>
-              <Icon size={17} />
-            </div>
-            <div className="min-w-0">
-              <h4 className="text-sm font-bold text-slate-900 group-hover:text-indigo-700 truncate transition-colors">
-                {tool.name}
-              </h4>
-              <span className="block text-[11px] font-medium text-slate-400 truncate">
-                {tool.subGroup}
-              </span>
-            </div>
+          <div
+            className={`w-10 h-10 rounded-[12px] flex items-center justify-center shrink-0 ${CATEGORY_ICON_STYLE[tool.category]}`}
+          >
+            <Icon size={18} />
           </div>
-          <p className="text-xs text-slate-500 leading-relaxed line-clamp-2">{tool.shortDesc}</p>
-          <div className="mt-auto pt-1 flex items-center gap-1.5">
-            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200/80">
-              {tool.handledFiles}
-            </span>
+          <div className="min-w-0 flex-1">
+            <h4 className="text-[15px] font-semibold tracking-[-0.01em] text-[#1D1D1F] group-hover:text-[#0071E3] truncate transition-colors">
+              {tool.name}
+            </h4>
+            <p className="text-[13px] text-[#6E6E73] truncate mt-0.5">{tool.shortDesc}</p>
           </div>
         </button>
 
@@ -201,10 +151,10 @@ export const AllToolsHub: React.FC<AllToolsHubProps> = ({
           onClick={() => onToggleFavorite(tool.id)}
           title={isFav ? 'Hapus dari Favorit' : 'Sematkan ke Favorit'}
           aria-label={isFav ? 'Hapus dari Favorit' : 'Sematkan ke Favorit'}
-          className={`absolute top-3 right-3 p-1.5 rounded-lg transition-colors ${
+          className={`absolute top-1/2 -translate-y-1/2 right-3 p-1.5 rounded-full transition-all ${
             isFav
-              ? 'text-amber-500 bg-amber-50 hover:bg-amber-100'
-              : 'text-slate-300 hover:text-amber-500 hover:bg-slate-100 opacity-70 group-hover:opacity-100'
+              ? 'opacity-100 text-[#FF9500] hover:bg-[#FF9500]/10'
+              : 'opacity-0 group-hover:opacity-100 focus:opacity-100 text-[#86868B] hover:text-[#FF9500] hover:bg-black/[0.04]'
           }`}
         >
           <Star size={14} fill={isFav ? 'currentColor' : 'none'} />
@@ -213,103 +163,169 @@ export const AllToolsHub: React.FC<AllToolsHubProps> = ({
     );
   };
 
-  return (
-    <div className="w-full max-w-6xl mx-auto flex flex-col gap-6">
-      {/* Compact Studio Hub Header */}
-      <div className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-sm space-y-4">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
-                {categoryFilter === 'all'
-                  ? 'Katalog Fitur Kerja'
-                  : `Semua ${CATEGORY_LABELS[categoryFilter]}`}
-              </h1>
-              <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
-                {counts[categoryFilter]} fitur &bull; 100% Lokal
-              </span>
-            </div>
-            <p className="text-xs sm:text-sm text-slate-500">
-              Dikelompokkan berdasarkan jenis file yang ditangani (.pdf, gambar JPG/PNG/WebP, dokumen
-              MD/CSV/JSON, dan arsip ZIP).
-            </p>
-          </div>
+  const showSpotlight = categoryFilter === 'all' && !query.trim();
+  const showCategorySubGroups = categoryFilter !== 'all';
 
-          <div className="relative w-full md:w-72 shrink-0">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Filter fitur (misal: sensor, qr, pas foto)..."
-              className="w-full pl-9 pr-8 py-2 rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white text-sm text-slate-800 placeholder:text-slate-400 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-colors"
-            />
-            {query && (
+  return (
+    <div className="w-full max-w-5xl mx-auto flex flex-col gap-8">
+      {/* Apple Editorial Hero & 2-Card Bento Spotlight */}
+      {showSpotlight ? (
+        <div className="space-y-8">
+          <section className="pt-6 pb-2 sm:pt-10 text-center space-y-4">
+            <p className="text-xs font-medium tracking-wide uppercase text-[#6E6E73]">
+              100% On-Device &middot; Privasi Penuh
+            </p>
+            <h1 className="text-3xl sm:text-5xl font-semibold tracking-[-0.03em] leading-[1.08] text-[#1D1D1F]">
+              Work Tool Super App.
+              <span className="text-[#6E6E73]"> Cepat. Privat. Lokal.</span>
+            </h1>
+            <p className="text-sm sm:text-[17px] text-[#6E6E73] max-w-2xl mx-auto leading-relaxed">
+              {tools.length} alat kerja PDF, gambar, data, dan otomasi AI yang berjalan langsung di
+              perangkat Anda tanpa unggah server.
+            </p>
+            <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
+              {aiChatTool && (
+                <button
+                  type="button"
+                  onClick={() => onSelectTool(aiChatTool)}
+                  className="bg-[#0071E3] hover:bg-[#0077ED] text-white px-5 py-2.5 rounded-full text-sm font-medium transition-colors shadow-2xs"
+                >
+                  Coba AI Chat
+                </button>
+              )}
+              {pipelineTool && (
+                <button
+                  type="button"
+                  onClick={() => onSelectTool(pipelineTool)}
+                  className="text-[#0066CC] hover:underline px-4 py-2.5 text-sm font-medium inline-flex items-center gap-1"
+                >
+                  <span>Buka Visual Pipeline</span>
+                  <span aria-hidden="true">&rsaquo;</span>
+                </button>
+              )}
+            </div>
+          </section>
+
+          {/* 2-Card Bento Spotlight */}
+          <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {aiChatTool && (
               <button
                 type="button"
-                onClick={() => setQuery('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                aria-label="Hapus pencarian"
+                onClick={() => onSelectTool(aiChatTool)}
+                className="text-left bg-[#1D1D1F] text-white rounded-[28px] p-7 sm:p-8 flex flex-col justify-between min-h-[210px] hover:scale-[1.005] transition-transform shadow-[0_8px_28px_rgba(0,0,0,0.12)]"
               >
-                <X size={14} />
+                <div>
+                  <span className="bg-gradient-to-r from-[#5AC8FA] via-[#AF52DE] to-[#FF375F] bg-clip-text text-transparent text-xs font-semibold">
+                    AI Agent &amp; Chat Studio
+                  </span>
+                  <h2 className="text-2xl font-semibold tracking-[-0.02em] mt-2">
+                    Perintahkan dengan bahasa Anda.
+                  </h2>
+                  <p className="text-sm text-[#A1A1A6] mt-2 leading-relaxed">
+                    Hubungkan OpenCode, Antigravity (Gemini), Ollama, atau jalankan instan secara
+                    offline.
+                  </p>
+                </div>
+                <span className="text-sm font-medium text-[#2997FF] mt-5 inline-flex items-center gap-1">
+                  <span>Mulai chat</span>
+                  <span aria-hidden="true">&rsaquo;</span>
+                </span>
               </button>
             )}
-          </div>
-        </div>
 
-        {/* Quick Domain Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2 pt-2 border-t border-slate-100">
-          {DOMAIN_TABS.map((tab) => {
-            const Icon = tab.icon;
+            {pipelineTool && (
+              <button
+                type="button"
+                onClick={() => onSelectTool(pipelineTool)}
+                className="text-left bg-white text-[#1D1D1F] rounded-[28px] p-7 sm:p-8 border border-black/[0.05] shadow-[0_2px_16px_rgba(0,0,0,0.03)] flex flex-col justify-between min-h-[210px] hover:scale-[1.005] hover:shadow-[0_12px_32px_rgba(0,0,0,0.06)] transition-all"
+              >
+                <div>
+                  <span className="text-xs font-semibold text-[#6E6E73]">Otomasi Multi-Langkah</span>
+                  <h2 className="text-2xl font-semibold tracking-[-0.02em] mt-2">
+                    Visual Pipeline Studio.
+                  </h2>
+                  <p className="text-sm text-[#6E6E73] mt-2 leading-relaxed">
+                    Rangkai PDF, Gambar, dan ZIP secara berantai &mdash; lengkap dengan preset dan
+                    salin CLI/MCP.
+                  </p>
+                </div>
+                <span className="text-sm font-medium text-[#0066CC] mt-5 inline-flex items-center gap-1">
+                  <span>Susun pipeline</span>
+                  <span aria-hidden="true">&rsaquo;</span>
+                </span>
+              </button>
+            )}
+          </section>
+        </div>
+      ) : (
+        categoryFilter !== 'all' && (
+          <div className="pt-2 space-y-1">
+            <h1 className="text-2xl sm:text-3xl font-semibold tracking-[-0.025em] text-[#1D1D1F]">
+              {CATEGORY_LABELS[categoryFilter]}
+            </h1>
+            <p className="text-sm text-[#6E6E73]">
+              {counts[categoryFilter]} alat lokal siap pakai di kategori ini.
+            </p>
+          </div>
+        )
+      )}
+
+      {/* macOS Segmented Control + Rounded Search */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div className="inline-flex items-center gap-1 bg-[#E8E8ED]/80 p-1 rounded-full overflow-x-auto max-w-full no-scrollbar">
+          {CATEGORY_TABS.map((tab) => {
             const active = categoryFilter === tab.id;
             return (
               <button
                 key={tab.id}
                 type="button"
                 onClick={() => handleCategorySelect(tab.id)}
-                className={`text-left p-2.5 rounded-xl border transition-all flex items-start gap-2.5 ${
+                className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all ${
                   active
-                    ? 'bg-slate-900 text-white border-slate-900 shadow-sm'
-                    : 'bg-slate-50/60 hover:bg-slate-100 text-slate-700 border-slate-200/80'
+                    ? 'bg-white text-[#1D1D1F] shadow-sm'
+                    : 'text-[#6E6E73] hover:text-[#1D1D1F]'
                 }`}
               >
-                <div
-                  className={`p-1.5 rounded-lg shrink-0 ${
-                    active ? 'bg-white/15 text-white' : tab.accent
+                <span>{tab.label}</span>
+                <span
+                  className={`text-[10px] ${
+                    active ? 'text-[#6E6E73] font-semibold' : 'text-[#86868B]'
                   }`}
                 >
-                  <Icon size={15} />
-                </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs font-bold truncate">{tab.label}</span>
-                    <span
-                      className={`text-[10px] font-bold px-1.5 py-0.2 rounded ${
-                        active ? 'bg-white/20 text-white' : 'bg-white text-slate-500'
-                      }`}
-                    >
-                      {counts[tab.id]}
-                    </span>
-                  </div>
-                  <p
-                    className={`text-[10px] mt-0.5 line-clamp-1 ${
-                      active ? 'text-slate-300' : 'text-slate-500'
-                    }`}
-                  >
-                    {tab.desc}
-                  </p>
-                </div>
+                  {counts[tab.id]}
+                </span>
               </button>
             );
           })}
+        </div>
+
+        <div className="relative w-full md:w-64 shrink-0">
+          <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#86868B]" />
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Cari alat..."
+            className="w-full pl-9 pr-8 py-2 rounded-full border border-black/[0.08] bg-white text-sm text-[#1D1D1F] placeholder:text-[#86868B] focus:border-[#0071E3] focus:ring-2 focus:ring-[#0071E3]/20 outline-none transition-colors shadow-2xs"
+          />
+          {query && (
+            <button
+              type="button"
+              onClick={() => setQuery('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-[#86868B] hover:text-[#1D1D1F]"
+              aria-label="Hapus pencarian"
+            >
+              <X size={14} />
+            </button>
+          )}
         </div>
       </div>
 
       {/* Favorites Section */}
       {!query.trim() && categoryFilter === 'all' && favoriteTools.length > 0 && (
-        <section className="space-y-2.5">
-          <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-amber-700 px-0.5">
-            <Star size={13} fill="currentColor" />
+        <section className="space-y-3">
+          <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-[#C96B00] px-0.5">
+            <Star size={12} fill="currentColor" />
             <span>Favorit ({favoriteTools.length})</span>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -320,9 +336,9 @@ export const AllToolsHub: React.FC<AllToolsHubProps> = ({
 
       {/* Recent Tools Section */}
       {!query.trim() && categoryFilter === 'all' && recentTools.length > 0 && (
-        <section className="space-y-2">
-          <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-500 px-0.5">
-            <Clock size={13} />
+        <section className="space-y-2.5">
+          <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-[#86868B] px-0.5">
+            <Clock size={12} />
             <span>Terakhir Dipakai</span>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -333,9 +349,9 @@ export const AllToolsHub: React.FC<AllToolsHubProps> = ({
                   key={`recent-${tool.id}`}
                   type="button"
                   onClick={() => onSelectTool(tool)}
-                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white border border-slate-200 hover:border-indigo-300 hover:text-indigo-700 text-xs font-semibold text-slate-700 shadow-sm transition-colors"
+                  className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white border border-black/[0.06] hover:border-[#0071E3]/40 hover:text-[#0071E3] text-xs font-medium text-[#1D1D1F] shadow-2xs transition-colors"
                 >
-                  <Icon size={13} className="text-slate-400" />
+                  <Icon size={13} className="text-[#86868B]" />
                   <span>{tool.name}</span>
                 </button>
               );
@@ -344,36 +360,39 @@ export const AllToolsHub: React.FC<AllToolsHubProps> = ({
         </section>
       )}
 
-      {/* Categorized Bento Catalog */}
+      {/* Categorized Apple Tool Grid */}
       {groupedByCategory.length === 0 ? (
-        <div className="bg-white rounded-2xl p-10 text-center border border-slate-200 text-sm text-slate-500">
+        <div className="bg-white rounded-[24px] p-10 text-center border border-black/[0.05] text-sm text-[#6E6E73]">
           Tidak ada fitur yang cocok dengan pencarian &ldquo;{query}&rdquo;.
         </div>
       ) : (
         groupedByCategory.map((section) => (
           <section key={section.category} className="space-y-3.5">
-            <div className="flex items-center justify-between border-b border-slate-200/80 pb-2">
-              <div className="flex items-center gap-2">
-                <h2 className="text-base font-bold text-slate-900">{section.label}</h2>
-                <span className="text-[11px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200/70">
-                  {section.fileHint}
-                </span>
-              </div>
-              <span className="text-[11px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
-                {section.count} fitur
-              </span>
+            <div className="flex items-center justify-between border-b border-black/[0.06] pb-2">
+              <h2 className="text-lg font-semibold tracking-[-0.015em] text-[#1D1D1F]">
+                {section.label}
+              </h2>
+              <span className="text-xs font-medium text-[#86868B]">{section.count} fitur</span>
             </div>
 
-            {section.subGroups.map((sub) => (
-              <div key={`${section.category}-${sub.name}`} className="space-y-2">
-                <h3 className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                  {sub.name}
-                </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {sub.items.map((tool) => renderToolCard(tool, `${section.category}-`))}
-                </div>
+            {showCategorySubGroups ? (
+              <div className="space-y-5">
+                {section.subGroups.map((sub) => (
+                  <div key={`${section.category}-${sub.name}`} className="space-y-2.5">
+                    <h3 className="text-[11px] font-semibold uppercase tracking-wider text-[#86868B]">
+                      {sub.name}
+                    </h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {sub.items.map((tool) => renderToolCard(tool, `${section.category}-`))}
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {section.items.map((tool) => renderToolCard(tool, `${section.category}-`))}
+              </div>
+            )}
           </section>
         ))
       )}

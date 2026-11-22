@@ -29,6 +29,7 @@ import {
   ShieldCheck,
   ShieldOff,
   Sliders,
+  Sparkles,
   Stamp,
   Table,
   Tags,
@@ -558,17 +559,28 @@ export const NAV_TOOLS: NavToolEntry[] = [
     utilityTool: 'util.hash_checksum',
   },
 
-  // ================= MULTI-FILE PIPELINE =================
+  // ================= MULTI-FILE PIPELINE & AI AGENT =================
+  {
+    id: 'agent:chat',
+    hash: 'ai-chat',
+    name: 'AI Agent & Chat Studio',
+    shortDesc: 'Instruksikan pengolahan dokumen dalam bahasa alami (didukung OpenCode / LLM)',
+    handledFiles: 'Multi-File',
+    category: 'pipeline',
+    subGroup: 'Otomasi Lintas File & AI',
+    icon: Sparkles,
+    badgeColor: 'text-purple-700 bg-purple-50 border-purple-200',
+  },
   {
     id: 'pipeline:studio',
     hash: 'pipeline',
-    name: 'AI Agent & Pipeline Studio',
-    shortDesc: 'Rangkai kombinasi PDF + Gambar + Arsip & salin perintah CLI/MCP',
+    name: 'Visual Pipeline Studio',
+    shortDesc: 'Rangkai kombinasi PDF + Gambar + Arsip secara visual & salin perintah CLI/MCP',
     handledFiles: 'Multi-File',
     category: 'pipeline',
-    subGroup: 'Otomasi Lintas File',
+    subGroup: 'Otomasi Lintas File & AI',
     icon: Bot,
-    badgeColor: 'text-purple-700 bg-purple-50 border-purple-200',
+    badgeColor: 'text-indigo-700 bg-indigo-50 border-indigo-200',
   },
 ];
 

@@ -15,6 +15,8 @@ export type PipelineProgressCallback = (
   message?: string,
 ) => void;
 
+export const MAX_PIPELINE_STEPS = 25;
+
 export async function runPipeline(
   initialFiles: VirtualFile[],
   steps: PipelineStep[],
@@ -22,6 +24,9 @@ export async function runPipeline(
 ): Promise<PipelineExecutionResult> {
   if (!Array.isArray(steps) || steps.length === 0) {
     throw new Error('Pipeline requires at least one step.');
+  }
+  if (steps.length > MAX_PIPELINE_STEPS) {
+    throw new Error(`Pipeline exceeds maximum allowed steps (${MAX_PIPELINE_STEPS}).`);
   }
 
   const pipelineStart = Date.now();
