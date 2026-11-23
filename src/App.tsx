@@ -1224,6 +1224,14 @@ function App() {
               FAQ
             </button>
             <a
+              href="https://github.com/alafgani1000/worktools/releases/latest"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[#0066CC] hover:underline font-medium transition-colors"
+            >
+              Unduh Versi Desktop
+            </a>
+            <a
               href="https://github.com/alafgani1000/worktools"
               target="_blank"
               rel="noopener noreferrer"

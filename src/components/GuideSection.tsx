@@ -49,7 +49,11 @@ const CopyButton: React.FC<{ text: string; label?: string }> = ({ text, label = 
   );
 };
 
-const OPENCODE_SERVE_CMD = 'opencode serve --port 4096 --cors http://localhost:5174';
+const CURRENT_ORIGIN =
+  typeof window !== 'undefined' && window.location?.origin
+    ? window.location.origin
+    : 'https://worktools.my.id';
+const OPENCODE_SERVE_CMD = `opencode serve --port 4096 --cors ${CURRENT_ORIGIN}`;
 
 const OPENCODE_JSON_SNIPPET = `{
   "$schema": "https://opencode.ai/config.json",

@@ -23,6 +23,7 @@ import {
   X,
   Zap,
 } from 'lucide-react';
+import { invoke } from '@tauri-apps/api/core';
 import { getTool, listTools } from '../core/registry.ts';
 import { runPipeline } from '../core/pipeline.ts';
 import { formatByteSize } from '../core/types.ts';
@@ -49,8 +50,15 @@ export interface AIChatConfig {
   rememberSecrets: boolean;
 }
 
+function isTauriDesktop(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    ('__TAURI_INTERNALS__' in window || '__TAURI__' in window)
+  );
+}
+
 const DEFAULT_CONFIG: AIChatConfig = {
-  provider: 'opencode',
+  provider: 'offline',
   opencodeUrl: 'http://127.0.0.1:4096',
   opencodeModel: '',
   geminiModel: 'gemini-2.0-flash',
@@ -68,13 +76,86 @@ const GEMINI_ANTIGRAVITY_MODELS = [
   { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash (Hemat & Cepat)' },
 ];
 
-const CONFIG_STORAGE_KEY = 'tenggoo_ai_chat_config_v3';
+const CONFIG_STORAGE_KEY = 'tenggoo_ai_chat_config_v4';
 const SECRETS_STORAGE_KEY = 'tenggoo_ai_chat_secrets_v1';
 const CHAT_HISTORY_STORAGE_KEY = 'tenggoo_ai_chat_history_v3';
 
 function isLoopbackHostname(hostname: string): boolean {
   const clean = hostname.toLowerCase();
   return clean === 'localhost' || clean === '127.0.0.1' || clean === '::1' || clean === '[::1]';
+}
+
+interface LocalHttpBridgeResponse {
+  ok: boolean;
+  status: number;
+  body: string;
+}
+
+/**
+ * Routes local 127.0.0.1 / localhost HTTP requests through Tauri's native Rust TCP bridge
+ * when running in the Desktop app, completely eliminating browser CORS & Private Network Access blocks.
+ */
+async function localAiFetch(
+  url: string,
+  options?: {
+    method?: string;
+    headers?: Record<string, string>;
+    body?: string;
+    signal?: AbortSignal;
+  },
+): Promise<{ ok: boolean; status: number; statusText: string; json: () => Promise<unknown> }> {
+  if (isTauriDesktop()) {
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol === 'http:' && isLoopbackHostname(parsed.hostname)) {
+        const bridgeRes = await invoke<LocalHttpBridgeResponse>('tauri_ai_http_request', {
+          url,
+          method: options?.method ?? 'GET',
+          headers: options?.headers ?? {},
+          body: options?.body ?? null,
+        });
+        return {
+          ok: bridgeRes.ok,
+          status: bridgeRes.status,
+          statusText: bridgeRes.ok ? 'OK' : `HTTP ${bridgeRes.status}`,
+          json: async () => JSON.parse(bridgeRes.body) as unknown,
+        };
+      }
+    } catch (err) {
+      throw err instanceof Error ? err : new Error(String(err));
+    }
+  }
+
+  const res = await fetch(url, {
+    method: options?.method ?? 'GET',
+    headers: options?.headers,
+    body: options?.body,
+    signal: options?.signal,
+  });
+  return {
+    ok: res.ok,
+    status: res.status,
+    statusText: res.statusText,
+    json: () => res.json(),
+  };
+}
+
+function getAppOrigin(): string {
+  return typeof window !== 'undefined' && window.location?.origin
+    ? window.location.origin
+    : 'https://worktools.my.id';
+}
+
+function buildOpenCodeServeCommand(rawUrl: string): string {
+  let port = '4096';
+  try {
+    const parsed = new URL(rawUrl.trim());
+    if (parsed.port) port = parsed.port;
+  } catch {
+    const match = rawUrl.match(/:(\d{2,5})/);
+    if (match?.[1]) port = match[1];
+  }
+  return `opencode serve --port ${port} --cors ${getAppOrigin()}`;
 }
 
 function validateAiEndpointUrl(
@@ -184,7 +265,7 @@ function loadStoredConfig(): AIChatConfig {
 }
 
 /**
- * Intelligent local intent parser for offline fallback mode or instant tool resolution.
+ * Comprehensive 38-tool local intent parser for 100% offline, zero-setup execution.
  */
 function resolveIntentFromPrompt(
   prompt: string,
@@ -194,39 +275,291 @@ function resolveIntentFromPrompt(
   const steps: PipelineStep[] = [];
   const explanations: string[] = [];
 
-  const hasPdf = inputFiles.some((f) => f.name.endsWith('.pdf'));
-  const hasImages = inputFiles.some((f) => /\.(png|jpe?g|webp|bmp)$/i.test(f.name));
+  const hasPdf = inputFiles.some((f) => f.name.toLowerCase().endsWith('.pdf'));
+  const hasImages = inputFiles.some((f) => /\.(png|jpe?g|webp|bmp|gif)$/i.test(f.name));
+  const hasZip = inputFiles.some((f) => /\.zip$/i.test(f.name));
+  const matchQuote = prompt.match(/['"]([^'"]+)['"]/);
+  const quotedText = matchQuote?.[1]?.trim();
 
-  // Merge intent
-  if (p.includes('gabung') || p.includes('merge') || p.includes('satukan')) {
-    if (hasImages && !hasPdf) {
+  // 1. Unpack ZIP (if input is ZIP or user asks to extract ZIP)
+  if (
+    hasZip ||
+    p.includes('ekstrak zip') ||
+    p.includes('bongkar zip') ||
+    p.includes('unzip') ||
+    p.includes('buka zip')
+  ) {
+    steps.push({ tool: 'util.zip_unpack', params: {} });
+    explanations.push('Mengekstrak isi file dari arsip ZIP');
+  }
+
+  // 2. Generator tools (0-input tools: QR Code, Markdown -> PDF, CSV/JSON Table -> PDF)
+  if (
+    (p.includes('qr') || p.includes('qrcode') || p.includes('barcode')) &&
+    !p.includes('tempel') &&
+    !p.includes('stamp')
+  ) {
+    let qrText = quotedText || 'https://worktools.my.id';
+    const urlMatch = prompt.match(/https?:\/\/[^\s'"]+/i);
+    if (urlMatch) qrText = urlMatch[0];
+    steps.push({ tool: 'util.qr_generate', params: { text: qrText, size: 280 } });
+    explanations.push(`Membuat QR Code untuk '${qrText}'`);
+  }
+
+  if (
+    p.includes('markdown ke pdf') ||
+    p.includes('teks ke pdf') ||
+    p.includes('tulisan ke pdf') ||
+    p.includes('buat pdf dari teks') ||
+    p.includes('md to pdf')
+  ) {
+    const colonIdx = prompt.indexOf(':');
+    const mdBody =
+      quotedText ||
+      (colonIdx !== -1 ? prompt.slice(colonIdx + 1).trim() : `# Dokumen Baru\n\n${prompt}`);
+    steps.push({ tool: 'util.md_to_pdf', params: { markdown: mdBody, pageSize: 'A4' } });
+    explanations.push('Merender teks / Markdown menjadi dokumen PDF A4');
+  }
+
+  if (
+    p.includes('csv ke pdf') ||
+    p.includes('json ke pdf') ||
+    p.includes('tabel ke pdf') ||
+    p.includes('table to pdf')
+  ) {
+    steps.push({
+      tool: 'util.table_to_pdf',
+      params: { title: quotedText || 'Laporan Data Tabel', pageSize: 'A4' },
+    });
+    explanations.push('Mengubah data tabel CSV/JSON menjadi laporan PDF');
+  }
+
+  // 3. Merge PDF or Images -> PDF
+  if (
+    p.includes('gabung') ||
+    p.includes('merge') ||
+    p.includes('satukan') ||
+    p.includes('gambar ke pdf') ||
+    p.includes('foto ke pdf') ||
+    p.includes('image to pdf')
+  ) {
+    if (
+      (hasImages && !hasPdf) ||
+      p.includes('gambar ke pdf') ||
+      p.includes('foto ke pdf') ||
+      p.includes('image to pdf')
+    ) {
       steps.push({ tool: 'pdf.from_images', params: { pageSize: 'A4', margin: 20 } });
-      explanations.push('Menggabungkan gambar menjadi dokumen PDF A4');
+      explanations.push('Mengonversi dan menggabungkan gambar menjadi dokumen PDF A4');
     } else {
       steps.push({ tool: 'pdf.merge', params: {} });
       explanations.push('Menggabungkan file-file PDF menjadi satu dokumen');
     }
   }
 
-  // Watermark intent
-  if (p.includes('watermark') || p.includes('cap') || p.includes('stempel')) {
+  // 4. Split PDF / Extract pages
+  if (
+    p.includes('pisah') ||
+    p.includes('pecah') ||
+    p.includes('split') ||
+    p.includes('ambil halaman')
+  ) {
+    const rangeMatch = prompt.match(/halaman\s+([0-9,\-\s]+)/i) || prompt.match(/\b(\d+\s*-\s*\d+)\b/);
+    const pageRange = rangeMatch?.[1]?.trim();
+    if (pageRange) {
+      steps.push({ tool: 'pdf.split', params: { mode: 'range', pageRange } });
+      explanations.push(`Memisahkan/mengekstrak halaman PDF (${pageRange})`);
+    } else {
+      steps.push({ tool: 'pdf.split', params: { mode: 'burst' } });
+      explanations.push('Memecah setiap halaman PDF menjadi file terpisah');
+    }
+  }
+
+  // 5. Reorder / Reverse PDF pages
+  if (
+    p.includes('balik urutan') ||
+    p.includes('urutkan halaman') ||
+    p.includes('reorder') ||
+    p.includes('reverse halaman')
+  ) {
+    const orderMatch = prompt.match(/urutan\s+([0-9,\-\s]+)/i);
+    const order = orderMatch?.[1]?.trim() || 'reverse';
+    steps.push({ tool: 'pdf.reorder', params: { order } });
+    explanations.push(
+      order === 'reverse'
+        ? 'Membalik urutan halaman PDF dari belakang ke depan'
+        : `Mengatur ulang urutan halaman PDF (${order})`,
+    );
+  }
+
+  // 6. Rotate PDF or Image
+  if (p.includes('putar') || p.includes('rotasi') || p.includes('rotate') || p.includes('balik foto')) {
+    const angleMatch = p.match(/\b(90|180|270)\b/);
+    const angle = angleMatch ? (Number(angleMatch[1]) as 90 | 180 | 270) : 90;
+    if (hasImages && !hasPdf) {
+      const flipH = p.includes('horizontal') || p.includes('cermin') || p.includes('mirror');
+      const flipV = p.includes('vertikal') || p.includes('vertical');
+      steps.push({
+        tool: 'image.rotate_flip',
+        params: { angle, flipHorizontal: flipH, flipVertical: flipV },
+      });
+      explanations.push(`Memutar gambar ${angle}°${flipH ? ' + balik horizontal' : ''}`);
+    } else {
+      steps.push({ tool: 'pdf.rotate', params: { angle } });
+      explanations.push(`Memutar halaman PDF sebesar ${angle}°`);
+    }
+  }
+
+  // 7. Crop PDF margins or Image aspect ratio
+  if (p.includes('potong margin') || p.includes('rapikan pinggir') || p.includes('crop margin')) {
+    steps.push({ tool: 'pdf.crop_margins', params: { marginPt: 18 } });
+    explanations.push('Memotong margin kosong berlebih di tepi halaman PDF');
+  } else if (
+    (p.includes('potong') || p.includes('crop')) &&
+    (hasImages || p.includes('gambar') || p.includes('foto') || /\b(1:1|4:3|16:9|3:4|9:16)\b/.test(p))
+  ) {
+    const ratioMatch = p.match(/\b(1:1|4:3|3:4|16:9|9:16)\b/);
+    const aspectRatio = ratioMatch ? ratioMatch[1] : '1:1';
+    steps.push({ tool: 'image.crop', params: { aspectRatio } });
+    explanations.push(`Memotong gambar dengan rasio ${aspectRatio}`);
+  }
+
+  // 8. PDF N-up (multiple pages per sheet)
+  if (
+    p.includes('n-up') ||
+    p.includes('nup') ||
+    p.includes('per lembar') ||
+    p.includes('cetak hemat')
+  ) {
+    const nMatch = p.match(/\b([2469])\s*halaman/i);
+    const pagesPerSheet = nMatch ? Number(nMatch[1]) : 2;
+    steps.push({ tool: 'pdf.nup', params: { pagesPerSheet } });
+    explanations.push(`Menyusun ${pagesPerSheet} halaman PDF dalam satu lembar (N-up)`);
+  }
+
+  // 9. Auto Redact PII / Text or Area Redact
+  if (
+    p.includes('sensor') ||
+    p.includes('redact') ||
+    p.includes('samarkan') ||
+    p.includes('sembunyikan nik') ||
+    p.includes('hapus nik')
+  ) {
+    if (p.includes('kotak') || p.includes('area')) {
+      steps.push({ tool: 'pdf.redact', params: { burnIn: true } });
+      explanations.push('Menyensor area halaman PDF secara permanen');
+    } else {
+      let presetPattern: 'none' | 'nik' | 'email' | 'phone' | 'all_pii' = 'all_pii';
+      if (p.includes('nik') && !p.includes('email') && !p.includes('hp')) presetPattern = 'nik';
+      else if (p.includes('email') && !p.includes('nik')) presetPattern = 'email';
+      else if ((p.includes('hp') || p.includes('telepon') || p.includes('nomor')) && !p.includes('nik'))
+        presetPattern = 'phone';
+
+      steps.push({
+        tool: 'pdf.redact_text',
+        params: {
+          presetPattern: quotedText ? 'none' : presetPattern,
+          ...(quotedText ? { query: quotedText } : {}),
+          burnIn: true,
+        },
+      });
+      explanations.push(
+        quotedText
+          ? `Menyensor teks '${quotedText}' secara permanen (burn-in)`
+          : 'Menyensor data pribadi (NIK, Email, Nomor HP) secara permanen',
+      );
+    }
+  }
+
+  // 10. Unlock PDF
+  if (p.includes('buka kunci') || p.includes('unlock') || p.includes('hapus password')) {
+    const passMatch = prompt.match(/password\s*[:=]?\s*([^\s'"]+)/i);
+    const password = quotedText || passMatch?.[1] || '';
+    steps.push({ tool: 'pdf.unlock', params: { password } });
+    explanations.push('Membuka kunci proteksi password PDF');
+  }
+
+  // 11. Metadata strip / inspect (PDF & Image EXIF)
+  if (p.includes('exif') || (p.includes('metadata') && (hasImages || p.includes('foto') || p.includes('gambar')))) {
+    steps.push({ tool: 'image.strip_metadata', params: {} });
+    explanations.push('Menghapus metadata EXIF & lokasi GPS dari foto');
+  } else if (p.includes('metadata')) {
+    const isStrip =
+      p.includes('hapus') || p.includes('bersih') || p.includes('strip') || p.includes('clear');
+    steps.push({
+      tool: 'pdf.metadata',
+      params: { action: isStrip ? 'strip' : 'inspect' },
+    });
+    explanations.push(
+      isStrip ? 'Menghapus metadata tersembunyi dari PDF' : 'Memeriksa informasi metadata PDF',
+    );
+  }
+
+  // 12. AcroForm inspect / fill
+  if (p.includes('formulir') || p.includes('acroform') || p.includes('form pdf')) {
+    if (p.includes('isi') || p.includes('fill') || p.includes('flatten') || p.includes('ratakan')) {
+      steps.push({ tool: 'pdf.form_fill', params: { flatten: true } });
+      explanations.push('Mengisi dan meratakan (flatten) formulir PDF');
+    } else {
+      steps.push({ tool: 'pdf.form_inspect', params: {} });
+      explanations.push('Mendeteksi daftar kolom formulir interaktif di dalam PDF');
+    }
+  }
+
+  // 13. Diff PDF or Diff Image
+  if (p.includes('bandingkan') || p.includes('perbedaan') || p.includes('diff')) {
+    if (hasImages && !hasPdf) {
+      steps.push({ tool: 'image.diff', params: {} });
+      explanations.push('Membandingkan perbedaan visual dua gambar dengan peta warna (heatmap)');
+    } else {
+      steps.push({ tool: 'pdf.diff_text', params: {} });
+      explanations.push('Membandingkan perbedaan isi teks antara dua dokumen PDF');
+    }
+  }
+
+  // 14. Stamp image / QR onto PDF
+  if (
+    (p.includes('tempel') || p.includes('stamp') || p.includes('tanda tangan') || p.includes('logo')) &&
+    (hasPdf || p.includes('pdf'))
+  ) {
+    if (p.includes('qr')) {
+      const urlMatch = prompt.match(/https?:\/\/[^\s'"]+/i);
+      const qrText = quotedText || urlMatch?.[0] || 'https://worktools.my.id';
+      steps.push({ tool: 'util.qr_generate', params: { text: qrText, size: 220 } });
+      explanations.push(`Membuat QR Code '${qrText}'`);
+    }
+    steps.push({ tool: 'pdf.stamp_image', params: { position: 'bottom-right', scalePct: 22 } });
+    explanations.push('Menempelkan gambar/stempel ke pojok kanan bawah halaman PDF');
+  }
+
+  // 15. Watermark (PDF or Image)
+  if (p.includes('watermark') || p.includes('cap ') || p.includes('beri cap') || p.includes('stempel teks')) {
     let text = 'INTERNAL';
-    const matchQuote = prompt.match(/['"]([^'"]+)['"]/);
-    if (matchQuote && matchQuote[1]) {
-      text = matchQuote[1];
+    if (quotedText) {
+      text = quotedText;
     } else if (p.includes('rahasia') || p.includes('confidential')) {
       text = 'RAHASIA';
     } else if (p.includes('draft')) {
       text = 'DRAFT';
+    } else if (p.includes('salinan') || p.includes('copy')) {
+      text = 'SALINAN';
     }
-    steps.push({
-      tool: 'pdf.watermark',
-      params: { text, opacity: 0.2, position: 'center-diagonal' },
-    });
-    explanations.push(`Menambahkan watermark '${text}' miring di tengah halaman`);
+    if (hasImages && !hasPdf) {
+      steps.push({
+        tool: 'image.watermark',
+        params: { text, opacity: 0.35, position: 'center-diagonal' },
+      });
+      explanations.push(`Menambahkan watermark '${text}' pada gambar`);
+    } else {
+      steps.push({
+        tool: 'pdf.watermark',
+        params: { text, opacity: 0.2, position: 'center-diagonal' },
+      });
+      explanations.push(`Menambahkan watermark '${text}' miring di tengah halaman PDF`);
+    }
   }
 
-  // Page numbering intent
+  // 16. Page numbering
   if (
     p.includes('nomor halaman') ||
     p.includes('penomoran') ||
@@ -237,10 +570,68 @@ function resolveIntentFromPrompt(
       tool: 'pdf.page_numbers',
       params: { position: 'bottom-center', format: 'page-of-total' },
     });
-    explanations.push('Menambahkan nomor halaman dengan format "Halaman X dari Y" di tengah bawah');
+    explanations.push('Menambahkan nomor halaman di bagian tengah bawah PDF');
   }
 
-  // Compress intent
+  // 17. Image Resize
+  if (p.includes('resize') || p.includes('ubah ukuran gambar') || p.includes('resolusi')) {
+    const dimMatch = p.match(/(\d{2,4})\s*[x×]\s*(\d{2,4})/i) || p.match(/\b(\d{3,4})\s*px\b/i);
+    const width = dimMatch ? Number(dimMatch[1]) : 1280;
+    const height = dimMatch?.[2] ? Number(dimMatch[2]) : undefined;
+    steps.push({
+      tool: 'image.resize',
+      params: { width, ...(height ? { height } : {}), fit: 'inside' },
+    });
+    explanations.push(`Mengubah ukuran dimensi gambar ke lebar ${width}px`);
+  }
+
+  // 18. Image Format Conversion (PNG / JPEG / WebP / ICO)
+  if (
+    p.includes('ke webp') ||
+    p.includes('jadi webp') ||
+    p.includes('ke png') ||
+    p.includes('jadi png') ||
+    p.includes('ke jpg') ||
+    p.includes('jadi jpg') ||
+    p.includes('ke ico') ||
+    p.includes('jadi ico') ||
+    p.includes('favicon')
+  ) {
+    const targetFormat =
+      p.includes('ico') || p.includes('favicon')
+        ? 'ico'
+        : p.includes('webp')
+          ? 'webp'
+          : p.includes('png')
+            ? 'png'
+            : 'jpeg';
+    if (hasPdf && !hasImages && targetFormat !== 'ico') {
+      steps.push({ tool: 'pdf.to_images', params: { format: targetFormat, scale: 2, quality: 90 } });
+      explanations.push(`Mengonversi halaman PDF menjadi gambar ${targetFormat.toUpperCase()}`);
+    } else {
+      steps.push({ tool: 'image.convert', params: { format: targetFormat, quality: 90 } });
+      explanations.push(`Mengonversi format gambar menjadi ${targetFormat.toUpperCase()}`);
+    }
+  }
+
+  // 19. Document Scan Enhancer & Grid / ID Card Sheet
+  if (p.includes('perjelas scan') || p.includes('hitam putih') || p.includes('tajamkan scan') || p.includes('scan enhance')) {
+    steps.push({ tool: 'image.scan_enhance', params: { mode: 'bw-document', contrast: 1.35 } });
+    explanations.push('Memperjelas dan menajamkan kontras dokumen hasil foto/scan');
+  }
+
+  if (p.includes('kolase') || p.includes('grid') || p.includes('pasfoto') || p.includes('lembar ktp')) {
+    steps.push({ tool: 'image.grid_sheet', params: { columns: 2, pageSize: 'A4' } });
+    explanations.push('Menyusun kumpulan foto ke dalam satu lembar kisi-kisi (Grid Sheet)');
+  }
+
+  // 20. Image Info
+  if (p.includes('info gambar') || p.includes('cek dimensi') || p.includes('detail foto')) {
+    steps.push({ tool: 'image.info', params: {} });
+    explanations.push('Memeriksa dimensi, format, dan ukuran file gambar');
+  }
+
+  // 21. Compress PDF or Image
   if (
     p.includes('kompres') ||
     p.includes('compress') ||
@@ -251,43 +642,49 @@ function resolveIntentFromPrompt(
       steps.push({ tool: 'image.compress', params: { quality: 80, format: 'jpeg' } });
       explanations.push('Mengompresi file gambar dengan kualitas optimal 80%');
     } else {
-      steps.push({ tool: 'pdf.compress', params: { qualityLevel: 'ebook' } });
-      explanations.push('Mengompresi PDF ke level e-book (150 DPI) yang seimbang antara ukuran dan ketajaman');
+      steps.push({ tool: 'pdf.compress', params: { quality: 'medium' } });
+      explanations.push('Mengompresi ukuran PDF secara optimal');
     }
   }
 
-  // Convert PDF to images & ZIP
+  // 22. Convert PDF to images
   if (
     (p.includes('pdf ke gambar') || p.includes('ekstrak gambar') || p.includes('to image')) &&
-    (p.includes('zip') || p.includes('arsip') || steps.length === 0)
+    !steps.some((s) => s.tool === 'pdf.to_images')
   ) {
     steps.push({ tool: 'pdf.to_images', params: { format: 'jpeg', scale: 2, quality: 90 } });
     explanations.push('Merender halaman PDF menjadi gambar JPEG resolusi tinggi');
-    if (p.includes('zip') || p.includes('arsip')) {
-      steps.push({ tool: 'util.zip_pack', params: { archiveName: 'halaman_pdf.zip' } });
-      explanations.push('Mengemas seluruh gambar hasil konversi ke dalam arsip ZIP');
-    }
   }
 
-  // Extract text
-  if (p.includes('ekstrak teks') || p.includes('extract text') || p.includes('ambil teks')) {
+  // 23. Extract text
+  if (p.includes('ekstrak teks') || p.includes('extract text') || p.includes('ambil teks') || p.includes('baca teks')) {
     steps.push({ tool: 'pdf.extract_text', params: { includePositions: false } });
-    explanations.push('Mengekstrak seluruh teks dari isi dokumen PDF');
+    explanations.push('Mengekstrak seluruh isi teks dari dokumen PDF');
   }
 
-  // Extract tables
-  if (p.includes('tabel') || p.includes('table')) {
+  // 24. Extract tables
+  if (
+    (p.includes('tabel') || p.includes('table')) &&
+    !steps.some((s) => s.tool === 'util.table_to_pdf')
+  ) {
     steps.push({ tool: 'pdf.extract_tables', params: {} });
-    explanations.push('Mendeteksi kisi-kisi dan mengekstrak struktur tabel');
+    explanations.push('Mendeteksi kisi-kisi dan mengekstrak struktur tabel dari PDF');
   }
 
-  // QR Code generate
-  if (p.includes('qr') || p.includes('qrcode') || p.includes('barcode')) {
-    let qrText = 'https://tenggoo.my.id';
-    const urlMatch = prompt.match(/https?:\/\/[^\s]+/i);
-    if (urlMatch) qrText = urlMatch[0];
-    steps.push({ tool: 'util.qr_generate', params: { text: qrText, size: 260 } });
-    explanations.push(`Membuat QR Code untuk target '${qrText}'`);
+  // 25. Hash / Checksum
+  if (p.includes('sha256') || p.includes('sha-256') || p.includes('sha512') || p.includes('sha1') || p.includes('checksum') || p.includes('hash')) {
+    const algorithm = p.includes('512') ? 'SHA-512' : p.includes('sha1') || p.includes('sha-1') ? 'SHA-1' : 'SHA-256';
+    steps.push({ tool: 'util.hash_checksum', params: { algorithm } });
+    explanations.push(`Menghitung sidik jari kriptografi ${algorithm} file`);
+  }
+
+  // 26. Pack into ZIP archive (can be standalone or chained at the end of any pipeline!)
+  if (
+    (p.includes('zip') || p.includes('arsip')) &&
+    !steps.some((s) => s.tool === 'util.zip_unpack')
+  ) {
+    steps.push({ tool: 'util.zip_pack', params: { archiveName: 'hasil_worktools.zip' } });
+    explanations.push('Mengemas seluruh file hasil pemrosesan ke dalam arsip ZIP');
   }
 
   if (steps.length === 0) return null;
@@ -416,7 +813,7 @@ export const AIChatStudio: React.FC<AIChatStudioProps> = ({
         if (cfg.opencodePassword) {
           headers.Authorization = `Basic ${btoa(`opencode:${cfg.opencodePassword}`)}`;
         }
-        const res = await fetch(endpoint, { method: 'GET', headers, signal: controller.signal });
+        const res = await localAiFetch(endpoint, { method: 'GET', headers, signal: controller.signal });
         clearTimeout(timeoutId);
         if (res.ok) {
           const json = (await res.json()) as Record<string, unknown>;
@@ -455,7 +852,7 @@ export const AIChatStudio: React.FC<AIChatStudioProps> = ({
         if (cfg.openaiApiKey) {
           headers.Authorization = `Bearer ${cfg.openaiApiKey}`;
         }
-        const res = await fetch(endpoint, { method: 'GET', headers, signal: controller.signal });
+        const res = await localAiFetch(endpoint, { method: 'GET', headers, signal: controller.signal });
         clearTimeout(timeoutId);
         if (res.ok) {
           const json = (await res.json()) as { data?: { id: string }[] };
@@ -524,6 +921,15 @@ export const AIChatStudio: React.FC<AIChatStudioProps> = ({
         return;
       }
       try {
+        if (isTauriDesktop()) {
+          const portMatch = urlCheck.url.match(/:(\d{2,5})/);
+          const port = portMatch ? Number(portMatch[1]) : 4096;
+          try {
+            await invoke('tauri_ai_ensure_opencode', { port });
+          } catch {
+            // Continue to connection test even if auto-spawn skipped
+          }
+        }
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 3500);
         const endpoint = `${urlCheck.url}/session`;
@@ -531,7 +937,7 @@ export const AIChatStudio: React.FC<AIChatStudioProps> = ({
         if (targetConfig.opencodePassword) {
           headers.Authorization = `Basic ${btoa(`opencode:${targetConfig.opencodePassword}`)}`;
         }
-        const res = await fetch(endpoint, {
+        const res = await localAiFetch(endpoint, {
           method: 'GET',
           headers,
           signal: controller.signal,
@@ -546,7 +952,16 @@ export const AIChatStudio: React.FC<AIChatStudioProps> = ({
       } catch (err) {
         setServerHealth('offline');
         const msg = err instanceof Error ? err.message : String(err);
-        setHealthError(`Gagal menghubungi OpenCode di ${targetConfig.opencodeUrl}: ${msg}`);
+        if (isTauriDesktop()) {
+          setHealthError(
+            `OpenCode belum terdeteksi di ${targetConfig.opencodeUrl} (${msg}). Anda dapat tetap menggunakan mode Built-in (38 Alat Offline) tanpa perlu menginstal OpenCode.`,
+          );
+        } else {
+          const cmd = buildOpenCodeServeCommand(targetConfig.opencodeUrl);
+          setHealthError(
+            `Gagal menghubungi OpenCode di ${targetConfig.opencodeUrl} (${msg}). Gunakan mode Built-in (langsung siap tanpa setup) atau jalankan: ${cmd}`,
+          );
+        }
       }
       return;
     }
@@ -566,7 +981,7 @@ export const AIChatStudio: React.FC<AIChatStudioProps> = ({
         if (targetConfig.openaiApiKey) {
           headers.Authorization = `Bearer ${targetConfig.openaiApiKey}`;
         }
-        const res = await fetch(endpoint, {
+        const res = await localAiFetch(endpoint, {
           method: 'GET',
           headers,
           signal: controller.signal,
@@ -586,8 +1001,9 @@ export const AIChatStudio: React.FC<AIChatStudioProps> = ({
     }
   }, []);
 
-  // Background check on config change without cascading synchronous setState
+  // Background check on config change without firing on every keystroke while settings modal is open
   useEffect(() => {
+    if (isSettingsOpen) return;
     let active = true;
 
     const probe = async () => {
@@ -619,6 +1035,15 @@ export const AIChatStudio: React.FC<AIChatStudioProps> = ({
       }
 
       try {
+        if (config.provider === 'opencode' && isTauriDesktop()) {
+          const portMatch = urlCheck.url.match(/:(\d{2,5})/);
+          const port = portMatch ? Number(portMatch[1]) : 4096;
+          try {
+            await invoke('tauri_ai_ensure_opencode', { port });
+          } catch {
+            // Ignore auto-start failure during background probe
+          }
+        }
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 3500);
         const endpoint =
@@ -627,7 +1052,7 @@ export const AIChatStudio: React.FC<AIChatStudioProps> = ({
         if (config.provider === 'opencode' && config.opencodePassword) {
           headers.Authorization = `Basic ${btoa(`opencode:${config.opencodePassword}`)}`;
         }
-        const res = await fetch(endpoint, { method: 'GET', headers, signal: controller.signal });
+        const res = await localAiFetch(endpoint, { method: 'GET', headers, signal: controller.signal });
         clearTimeout(timeoutId);
         if (active) {
           if (res.ok || res.status === 401 || res.status === 404) {
@@ -642,7 +1067,11 @@ export const AIChatStudio: React.FC<AIChatStudioProps> = ({
         if (active) {
           setServerHealth('offline');
           const msg = err instanceof Error ? err.message : String(err);
-          setHealthError(`Gagal menghubungi server: ${msg}`);
+          const hint =
+            config.provider === 'opencode'
+              ? ` — jalankan: ${buildOpenCodeServeCommand(config.opencodeUrl)}`
+              : '';
+          setHealthError(`Gagal menghubungi server (${msg})${hint}`);
         }
       }
     };
@@ -651,10 +1080,11 @@ export const AIChatStudio: React.FC<AIChatStudioProps> = ({
     return () => {
       active = false;
     };
-  }, [config]);
+  }, [config, isSettingsOpen]);
 
-  // Background load models on provider / endpoint changes
+  // Background load models on provider / endpoint changes (paused while editing in settings modal)
   useEffect(() => {
+    if (isSettingsOpen) return;
     let active = true;
 
     const fetchModels = async () => {
@@ -674,7 +1104,7 @@ export const AIChatStudio: React.FC<AIChatStudioProps> = ({
           if (config.opencodePassword) {
             headers.Authorization = `Basic ${btoa(`opencode:${config.opencodePassword}`)}`;
           }
-          const res = await fetch(endpoint, { method: 'GET', headers, signal: controller.signal });
+          const res = await localAiFetch(endpoint, { method: 'GET', headers, signal: controller.signal });
           clearTimeout(timeoutId);
           if (res.ok) {
             const json = (await res.json()) as Record<string, unknown>;
@@ -713,7 +1143,7 @@ export const AIChatStudio: React.FC<AIChatStudioProps> = ({
           if (config.openaiApiKey) {
             headers.Authorization = `Bearer ${config.openaiApiKey}`;
           }
-          const res = await fetch(endpoint, { method: 'GET', headers, signal: controller.signal });
+          const res = await localAiFetch(endpoint, { method: 'GET', headers, signal: controller.signal });
           clearTimeout(timeoutId);
           if (res.ok) {
             const json = (await res.json()) as { data?: { id: string }[] };
@@ -742,7 +1172,14 @@ export const AIChatStudio: React.FC<AIChatStudioProps> = ({
     return () => {
       active = false;
     };
-  }, [config.provider, config.opencodeUrl, config.opencodePassword, config.openaiUrl, config.openaiApiKey]);
+  }, [
+    isSettingsOpen,
+    config.provider,
+    config.opencodeUrl,
+    config.opencodePassword,
+    config.openaiUrl,
+    config.openaiApiKey,
+  ]);
 
   const saveConfig = (newCfg: AIChatConfig) => {
     setConfig(newCfg);
@@ -892,7 +1329,7 @@ export const AIChatStudio: React.FC<AIChatStudioProps> = ({
           }
 
           // 1. Create or get session
-          const sessRes = await fetch(endpoint, {
+          const sessRes = await localAiFetch(endpoint, {
             method: 'POST',
             headers,
             body: JSON.stringify({ title: 'Tenggoo Web Chat' }),
@@ -914,7 +1351,7 @@ export const AIChatStudio: React.FC<AIChatStudioProps> = ({
               payloadBody.model = { modelID: config.opencodeModel };
             }
 
-            const msgRes = await fetch(msgEndpoint, {
+            const msgRes = await localAiFetch(msgEndpoint, {
               method: 'POST',
               headers,
               body: JSON.stringify(payloadBody),
@@ -1075,7 +1512,7 @@ export const AIChatStudio: React.FC<AIChatStudioProps> = ({
             tool_choice: 'auto',
           };
 
-          const res = await fetch(endpoint, {
+          const res = await localAiFetch(endpoint, {
             method: 'POST',
             headers,
             body: JSON.stringify(body),
@@ -1141,9 +1578,12 @@ export const AIChatStudio: React.FC<AIChatStudioProps> = ({
       }
     }
 
-    // Provider 4 / Fallback: Built-in intelligent intent resolution
+    // Provider 4 / Fallback: Built-in intelligent intent resolution (all 38 tools)
     const resolved = resolveIntentFromPrompt(text, currentFiles);
-    if (resolved && currentFiles.length > 0) {
+    const firstStepTool = resolved ? getTool(resolved.steps[0].tool) : undefined;
+    const canRunWithoutFiles = firstStepTool?.minInputs === 0;
+
+    if (resolved && (currentFiles.length > 0 || canRunWithoutFiles)) {
       const assistantMessage: ChatMessage = {
         id: assistantMsgId,
         sender: 'assistant',
@@ -1754,25 +2194,25 @@ export const AIChatStudio: React.FC<AIChatStudioProps> = ({
             </div>
 
             <div className="space-y-4 text-xs sm:text-sm">
-              {/* Provider Selection (4 Options) */}
+              {/* Provider Selection (4 Options — Built-in Instant First) */}
               <div>
                 <label className="block font-bold text-slate-800 mb-2">Pilih Engine / Backend AI:</label>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   <button
                     type="button"
-                    onClick={() => setConfig((c) => ({ ...c, provider: 'opencode' }))}
+                    onClick={() => setConfig((c) => ({ ...c, provider: 'offline' }))}
                     className={`p-2.5 rounded-xl border text-left transition-all ${
-                      config.provider === 'opencode'
-                        ? 'bg-purple-50 border-purple-400 text-purple-900 font-bold shadow-xs'
+                      config.provider === 'offline'
+                        ? 'bg-emerald-50 border-emerald-400 text-emerald-900 font-bold shadow-xs'
                         : 'border-slate-200 hover:bg-slate-50 text-slate-700'
                     }`}
                   >
                     <div className="flex items-center gap-1.5">
-                      <Terminal size={14} className="text-purple-600" />
-                      <span className="text-xs">OpenCode</span>
+                      <Zap size={14} className="text-emerald-600" />
+                      <span className="text-xs">Built-in</span>
                     </div>
                     <p className="text-[10px] font-normal text-slate-500 mt-1">
-                      CLI &amp; Server
+                      38 Alat (Tanpa Setup)
                     </p>
                   </button>
 
@@ -1796,6 +2236,24 @@ export const AIChatStudio: React.FC<AIChatStudioProps> = ({
 
                   <button
                     type="button"
+                    onClick={() => setConfig((c) => ({ ...c, provider: 'opencode' }))}
+                    className={`p-2.5 rounded-xl border text-left transition-all ${
+                      config.provider === 'opencode'
+                        ? 'bg-purple-50 border-purple-400 text-purple-900 font-bold shadow-xs'
+                        : 'border-slate-200 hover:bg-slate-50 text-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <Terminal size={14} className="text-purple-600" />
+                      <span className="text-xs">OpenCode</span>
+                    </div>
+                    <p className="text-[10px] font-normal text-slate-500 mt-1">
+                      {isTauriDesktop() ? 'Auto-Bridge Desktop' : 'Agent Lokal'}
+                    </p>
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={() => setConfig((c) => ({ ...c, provider: 'openai-compatible' }))}
                     className={`p-2.5 rounded-xl border text-left transition-all ${
                       config.provider === 'openai-compatible'
@@ -1809,24 +2267,6 @@ export const AIChatStudio: React.FC<AIChatStudioProps> = ({
                     </div>
                     <p className="text-[10px] font-normal text-slate-500 mt-1">
                       Ollama / LM Studio
-                    </p>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setConfig((c) => ({ ...c, provider: 'offline' }))}
-                    className={`p-2.5 rounded-xl border text-left transition-all ${
-                      config.provider === 'offline'
-                        ? 'bg-emerald-50 border-emerald-400 text-emerald-900 font-bold shadow-xs'
-                        : 'border-slate-200 hover:bg-slate-50 text-slate-700'
-                    }`}
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <Zap size={14} className="text-emerald-600" />
-                      <span className="text-xs">Built-in</span>
-                    </div>
-                    <p className="text-[10px] font-normal text-slate-500 mt-1">
-                      Instan Offline
                     </p>
                   </button>
                 </div>
@@ -1916,11 +2356,34 @@ export const AIChatStudio: React.FC<AIChatStudioProps> = ({
                     </p>
                   </div>
 
-                  <div className="text-[11px] text-purple-900 bg-white p-2.5 rounded-lg border border-purple-200">
-                    <p className="font-bold mb-1">💡 Cara Menjalankan OpenCode Server:</p>
-                    <code className="block bg-slate-900 text-white p-2 rounded text-[10px] select-all font-mono">
-                      opencode serve --port 4096 --cors http://localhost:5174
-                    </code>
+                  <div className="text-[11px] text-purple-900 bg-white p-2.5 rounded-lg border border-purple-200 space-y-1.5">
+                    {isTauriDesktop() ? (
+                      <>
+                        <p className="font-bold">🟢 Mode Desktop (Native Bridge Bebas-CORS Aktif):</p>
+                        <p className="text-[10px] text-slate-600">
+                          Aplikasi Desktop otomatis menyambungkan dan menyalakan OpenCode di latar belakang tanpa batasan CORS browser. Klik <strong>Uji Koneksi</strong> untuk menyalakan otomatis.
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="font-bold">💡 Tips Pengguna Umum vs Developer:</p>
+                        <p className="text-[10px] text-slate-600">
+                          Untuk pemakaian langsung tanpa terminal, pilih tab <strong>Built-in (38 Alat Tanpa Setup)</strong> atau{' '}
+                          <a
+                            href="https://github.com/alafgani1000/worktools/releases/latest"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[#0066CC] font-semibold underline"
+                          >
+                            unduh Work Tools versi Desktop
+                          </a>{' '}
+                          (bebas konfigurasi CORS). Jika ingin menghubungkan OpenCode ke browser ini, jalankan:
+                        </p>
+                        <code className="block bg-slate-900 text-white p-2 rounded text-[10px] select-all font-mono">
+                          {buildOpenCodeServeCommand(config.opencodeUrl)}
+                        </code>
+                      </>
+                    )}
                   </div>
                 </div>
               )}

@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Work Tool Super App",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "identifier": "com.worktool.superapp",
   "build": {
     "frontendDist": "../dist",
@@ -12,9 +12,12 @@
   "app": {
     "windows": [
       {
-        "title": "Work Tool Super App",
-        "width": 800,
-        "height": 600,
+        "title": "Work Tools — PDF, Image, Utilities & Local AI",
+        "width": 1280,
+        "height": 840,
+        "minWidth": 900,
+        "minHeight": 640,
+        "center": true,
         "resizable": true,
         "fullscreen": false
       }
