@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://worktools.my.id/sitemap.xml
+Sitemap: https://app.worktools.my.id/sitemap.xml

@@ -7,8 +7,11 @@ import {
   Bot,
   Check,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Copy,
   Download,
+  Eye,
   FileText,
   Loader2,
   Paperclip,
@@ -16,6 +19,7 @@ import {
   RefreshCw,
   Send,
   Settings,
+  SlidersHorizontal,
   Sparkles,
   Terminal,
   Trash2,
@@ -24,10 +28,16 @@ import {
   Zap,
 } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
-import { getTool, listTools } from '../core/registry.ts';
+import { getTool } from '../core/registry.ts';
 import { runPipeline } from '../core/pipeline.ts';
 import { formatByteSize } from '../core/types.ts';
-import type { PipelineStep, ToolDefinition, VirtualFile } from '../core/types.ts';
+import type { PipelineStep, VirtualFile } from '../core/types.ts';
+import {
+  buildAiFunctionTools,
+  parseAiToolCalls,
+  resolveIntentFromPrompt,
+  type RawAiToolCall,
+} from '../utils/aiIntentParser.ts';
 import {
   downloadVirtualFile,
   downloadVirtualFiles,
@@ -197,6 +207,12 @@ export interface ChatMessage {
     tool: string;
     params: Record<string, unknown>;
     steps?: PipelineStep[];
+    stepResults?: {
+      stepIndex: number;
+      tool: string;
+      summary: string;
+      durationMs: number;
+    }[];
     status: 'pending' | 'running' | 'completed' | 'failed';
     summary?: string;
     durationMs?: number;
@@ -206,20 +222,25 @@ export interface ChatMessage {
 }
 
 interface AIChatStudioProps {
-  onSendToPipeline?: (files: VirtualFile[]) => void;
+  onSendToPipeline?: (files: VirtualFile[], steps?: PipelineStep[]) => void;
   onOpenGuide?: () => void;
 }
 
 const SAMPLE_PROMPTS = [
   {
-    title: 'Gabungkan PDF & Beri Nomor',
+    title: 'Gabung PDF & Nomor Halaman',
     prompt: 'Gabungkan file-file PDF ini menjadi satu dokumen, lalu tambahkan nomor halaman di tengah bawah.',
     category: 'pdf',
   },
   {
-    title: 'Kompres Ukuran File',
-    prompt: 'Tolong kompres file ini agar ukurannya lebih kecil dan hemat ruang penyimpanan.',
-    category: 'optimize',
+    title: 'Sensor Otomatis NIK & Email',
+    prompt: 'Sensor otomatis semua NIK dan email di dokumen PDF ini secara permanen lalu kompres agar ringkas.',
+    category: 'security',
+  },
+  {
+    title: 'Rapikan Scan & Susun Grid A4',
+    prompt: 'Rapikan hasil scan kertas dengan memutihkan latar belakang, susun grid A4 2 kolom, lalu jadikan PDF.',
+    category: 'image',
   },
   {
     title: 'Beri Watermark Dokumen',
@@ -232,11 +253,28 @@ const SAMPLE_PROMPTS = [
     category: 'data',
   },
   {
-    title: 'PDF ke Gambar & Arsipkan ke ZIP',
-    prompt: 'Ubah setiap halaman PDF menjadi gambar JPG kualitas tinggi lalu bungkus dalam file ZIP.',
+    title: 'PDF ke Gambar & Arsip ZIP',
+    prompt: 'Ubah setiap halaman PDF menjadi gambar JPG kualitas tinggi lalu bungkus ke dalam file ZIP.',
     category: 'pipeline',
   },
 ];
+
+function isTextPreviewable(file: VirtualFile): boolean {
+  return (
+    file.mimeType.startsWith('text/') ||
+    file.mimeType === 'application/json' ||
+    /\.(md|txt|csv|json)$/i.test(file.name)
+  );
+}
+
+function decodeTextPreview(file: VirtualFile, maxChars = 2200): { text: string; truncated: boolean } {
+  const raw = new TextDecoder().decode(file.bytes);
+  if (raw.length <= maxChars) return { text: raw, truncated: false };
+  return {
+    text: `${raw.slice(0, maxChars)}\n\n... (pratinjau dipotong, unduh file untuk melihat keseluruhan)`,
+    truncated: true,
+  };
+}
 
 function loadStoredConfig(): AIChatConfig {
   try {
@@ -262,437 +300,6 @@ function loadStoredConfig(): AIChatConfig {
   } catch {
     return DEFAULT_CONFIG;
   }
-}
-
-/**
- * Comprehensive 38-tool local intent parser for 100% offline, zero-setup execution.
- */
-function resolveIntentFromPrompt(
-  prompt: string,
-  inputFiles: VirtualFile[],
-): { steps: PipelineStep[]; explanation: string } | null {
-  const p = prompt.toLowerCase();
-  const steps: PipelineStep[] = [];
-  const explanations: string[] = [];
-
-  const hasPdf = inputFiles.some((f) => f.name.toLowerCase().endsWith('.pdf'));
-  const hasImages = inputFiles.some((f) => /\.(png|jpe?g|webp|bmp|gif)$/i.test(f.name));
-  const hasZip = inputFiles.some((f) => /\.zip$/i.test(f.name));
-  const matchQuote = prompt.match(/['"]([^'"]+)['"]/);
-  const quotedText = matchQuote?.[1]?.trim();
-
-  // 1. Unpack ZIP (if input is ZIP or user asks to extract ZIP)
-  if (
-    hasZip ||
-    p.includes('ekstrak zip') ||
-    p.includes('bongkar zip') ||
-    p.includes('unzip') ||
-    p.includes('buka zip')
-  ) {
-    steps.push({ tool: 'util.zip_unpack', params: {} });
-    explanations.push('Mengekstrak isi file dari arsip ZIP');
-  }
-
-  // 2. Generator tools (0-input tools: QR Code, Markdown -> PDF, CSV/JSON Table -> PDF)
-  if (
-    (p.includes('qr') || p.includes('qrcode') || p.includes('barcode')) &&
-    !p.includes('tempel') &&
-    !p.includes('stamp')
-  ) {
-    let qrText = quotedText || 'https://worktools.my.id';
-    const urlMatch = prompt.match(/https?:\/\/[^\s'"]+/i);
-    if (urlMatch) qrText = urlMatch[0];
-    steps.push({ tool: 'util.qr_generate', params: { text: qrText, size: 280 } });
-    explanations.push(`Membuat QR Code untuk '${qrText}'`);
-  }
-
-  if (
-    p.includes('markdown ke pdf') ||
-    p.includes('teks ke pdf') ||
-    p.includes('tulisan ke pdf') ||
-    p.includes('buat pdf dari teks') ||
-    p.includes('md to pdf')
-  ) {
-    const colonIdx = prompt.indexOf(':');
-    const mdBody =
-      quotedText ||
-      (colonIdx !== -1 ? prompt.slice(colonIdx + 1).trim() : `# Dokumen Baru\n\n${prompt}`);
-    steps.push({ tool: 'util.md_to_pdf', params: { markdown: mdBody, pageSize: 'A4' } });
-    explanations.push('Merender teks / Markdown menjadi dokumen PDF A4');
-  }
-
-  if (
-    p.includes('csv ke pdf') ||
-    p.includes('json ke pdf') ||
-    p.includes('tabel ke pdf') ||
-    p.includes('table to pdf')
-  ) {
-    steps.push({
-      tool: 'util.table_to_pdf',
-      params: { title: quotedText || 'Laporan Data Tabel', pageSize: 'A4' },
-    });
-    explanations.push('Mengubah data tabel CSV/JSON menjadi laporan PDF');
-  }
-
-  // 3. Merge PDF or Images -> PDF
-  if (
-    p.includes('gabung') ||
-    p.includes('merge') ||
-    p.includes('satukan') ||
-    p.includes('gambar ke pdf') ||
-    p.includes('foto ke pdf') ||
-    p.includes('image to pdf')
-  ) {
-    if (
-      (hasImages && !hasPdf) ||
-      p.includes('gambar ke pdf') ||
-      p.includes('foto ke pdf') ||
-      p.includes('image to pdf')
-    ) {
-      steps.push({ tool: 'pdf.from_images', params: { pageSize: 'A4', margin: 20 } });
-      explanations.push('Mengonversi dan menggabungkan gambar menjadi dokumen PDF A4');
-    } else {
-      steps.push({ tool: 'pdf.merge', params: {} });
-      explanations.push('Menggabungkan file-file PDF menjadi satu dokumen');
-    }
-  }
-
-  // 4. Split PDF / Extract pages
-  if (
-    p.includes('pisah') ||
-    p.includes('pecah') ||
-    p.includes('split') ||
-    p.includes('ambil halaman')
-  ) {
-    const rangeMatch = prompt.match(/halaman\s+([0-9,\-\s]+)/i) || prompt.match(/\b(\d+\s*-\s*\d+)\b/);
-    const pageRange = rangeMatch?.[1]?.trim();
-    if (pageRange) {
-      steps.push({ tool: 'pdf.split', params: { mode: 'range', pageRange } });
-      explanations.push(`Memisahkan/mengekstrak halaman PDF (${pageRange})`);
-    } else {
-      steps.push({ tool: 'pdf.split', params: { mode: 'burst' } });
-      explanations.push('Memecah setiap halaman PDF menjadi file terpisah');
-    }
-  }
-
-  // 5. Reorder / Reverse PDF pages
-  if (
-    p.includes('balik urutan') ||
-    p.includes('urutkan halaman') ||
-    p.includes('reorder') ||
-    p.includes('reverse halaman')
-  ) {
-    const orderMatch = prompt.match(/urutan\s+([0-9,\-\s]+)/i);
-    const order = orderMatch?.[1]?.trim() || 'reverse';
-    steps.push({ tool: 'pdf.reorder', params: { order } });
-    explanations.push(
-      order === 'reverse'
-        ? 'Membalik urutan halaman PDF dari belakang ke depan'
-        : `Mengatur ulang urutan halaman PDF (${order})`,
-    );
-  }
-
-  // 6. Rotate PDF or Image
-  if (p.includes('putar') || p.includes('rotasi') || p.includes('rotate') || p.includes('balik foto')) {
-    const angleMatch = p.match(/\b(90|180|270)\b/);
-    const angle = angleMatch ? (Number(angleMatch[1]) as 90 | 180 | 270) : 90;
-    if (hasImages && !hasPdf) {
-      const flipH = p.includes('horizontal') || p.includes('cermin') || p.includes('mirror');
-      const flipV = p.includes('vertikal') || p.includes('vertical');
-      steps.push({
-        tool: 'image.rotate_flip',
-        params: { angle, flipHorizontal: flipH, flipVertical: flipV },
-      });
-      explanations.push(`Memutar gambar ${angle}°${flipH ? ' + balik horizontal' : ''}`);
-    } else {
-      steps.push({ tool: 'pdf.rotate', params: { angle } });
-      explanations.push(`Memutar halaman PDF sebesar ${angle}°`);
-    }
-  }
-
-  // 7. Crop PDF margins or Image aspect ratio
-  if (p.includes('potong margin') || p.includes('rapikan pinggir') || p.includes('crop margin')) {
-    steps.push({ tool: 'pdf.crop_margins', params: { marginPt: 18 } });
-    explanations.push('Memotong margin kosong berlebih di tepi halaman PDF');
-  } else if (
-    (p.includes('potong') || p.includes('crop')) &&
-    (hasImages || p.includes('gambar') || p.includes('foto') || /\b(1:1|4:3|16:9|3:4|9:16)\b/.test(p))
-  ) {
-    const ratioMatch = p.match(/\b(1:1|4:3|3:4|16:9|9:16)\b/);
-    const aspectRatio = ratioMatch ? ratioMatch[1] : '1:1';
-    steps.push({ tool: 'image.crop', params: { aspectRatio } });
-    explanations.push(`Memotong gambar dengan rasio ${aspectRatio}`);
-  }
-
-  // 8. PDF N-up (multiple pages per sheet)
-  if (
-    p.includes('n-up') ||
-    p.includes('nup') ||
-    p.includes('per lembar') ||
-    p.includes('cetak hemat')
-  ) {
-    const nMatch = p.match(/\b([2469])\s*halaman/i);
-    const pagesPerSheet = nMatch ? Number(nMatch[1]) : 2;
-    steps.push({ tool: 'pdf.nup', params: { pagesPerSheet } });
-    explanations.push(`Menyusun ${pagesPerSheet} halaman PDF dalam satu lembar (N-up)`);
-  }
-
-  // 9. Auto Redact PII / Text or Area Redact
-  if (
-    p.includes('sensor') ||
-    p.includes('redact') ||
-    p.includes('samarkan') ||
-    p.includes('sembunyikan nik') ||
-    p.includes('hapus nik')
-  ) {
-    if (p.includes('kotak') || p.includes('area')) {
-      steps.push({ tool: 'pdf.redact', params: { burnIn: true } });
-      explanations.push('Menyensor area halaman PDF secara permanen');
-    } else {
-      let presetPattern: 'none' | 'nik' | 'email' | 'phone' | 'all_pii' = 'all_pii';
-      if (p.includes('nik') && !p.includes('email') && !p.includes('hp')) presetPattern = 'nik';
-      else if (p.includes('email') && !p.includes('nik')) presetPattern = 'email';
-      else if ((p.includes('hp') || p.includes('telepon') || p.includes('nomor')) && !p.includes('nik'))
-        presetPattern = 'phone';
-
-      steps.push({
-        tool: 'pdf.redact_text',
-        params: {
-          presetPattern: quotedText ? 'none' : presetPattern,
-          ...(quotedText ? { query: quotedText } : {}),
-          burnIn: true,
-        },
-      });
-      explanations.push(
-        quotedText
-          ? `Menyensor teks '${quotedText}' secara permanen (burn-in)`
-          : 'Menyensor data pribadi (NIK, Email, Nomor HP) secara permanen',
-      );
-    }
-  }
-
-  // 10. Unlock PDF
-  if (p.includes('buka kunci') || p.includes('unlock') || p.includes('hapus password')) {
-    const passMatch = prompt.match(/password\s*[:=]?\s*([^\s'"]+)/i);
-    const password = quotedText || passMatch?.[1] || '';
-    steps.push({ tool: 'pdf.unlock', params: { password } });
-    explanations.push('Membuka kunci proteksi password PDF');
-  }
-
-  // 11. Metadata strip / inspect (PDF & Image EXIF)
-  if (p.includes('exif') || (p.includes('metadata') && (hasImages || p.includes('foto') || p.includes('gambar')))) {
-    steps.push({ tool: 'image.strip_metadata', params: {} });
-    explanations.push('Menghapus metadata EXIF & lokasi GPS dari foto');
-  } else if (p.includes('metadata')) {
-    const isStrip =
-      p.includes('hapus') || p.includes('bersih') || p.includes('strip') || p.includes('clear');
-    steps.push({
-      tool: 'pdf.metadata',
-      params: { action: isStrip ? 'strip' : 'inspect' },
-    });
-    explanations.push(
-      isStrip ? 'Menghapus metadata tersembunyi dari PDF' : 'Memeriksa informasi metadata PDF',
-    );
-  }
-
-  // 12. AcroForm inspect / fill
-  if (p.includes('formulir') || p.includes('acroform') || p.includes('form pdf')) {
-    if (p.includes('isi') || p.includes('fill') || p.includes('flatten') || p.includes('ratakan')) {
-      steps.push({ tool: 'pdf.form_fill', params: { flatten: true } });
-      explanations.push('Mengisi dan meratakan (flatten) formulir PDF');
-    } else {
-      steps.push({ tool: 'pdf.form_inspect', params: {} });
-      explanations.push('Mendeteksi daftar kolom formulir interaktif di dalam PDF');
-    }
-  }
-
-  // 13. Diff PDF or Diff Image
-  if (p.includes('bandingkan') || p.includes('perbedaan') || p.includes('diff')) {
-    if (hasImages && !hasPdf) {
-      steps.push({ tool: 'image.diff', params: {} });
-      explanations.push('Membandingkan perbedaan visual dua gambar dengan peta warna (heatmap)');
-    } else {
-      steps.push({ tool: 'pdf.diff_text', params: {} });
-      explanations.push('Membandingkan perbedaan isi teks antara dua dokumen PDF');
-    }
-  }
-
-  // 14. Stamp image / QR onto PDF
-  if (
-    (p.includes('tempel') || p.includes('stamp') || p.includes('tanda tangan') || p.includes('logo')) &&
-    (hasPdf || p.includes('pdf'))
-  ) {
-    if (p.includes('qr')) {
-      const urlMatch = prompt.match(/https?:\/\/[^\s'"]+/i);
-      const qrText = quotedText || urlMatch?.[0] || 'https://worktools.my.id';
-      steps.push({ tool: 'util.qr_generate', params: { text: qrText, size: 220 } });
-      explanations.push(`Membuat QR Code '${qrText}'`);
-    }
-    steps.push({ tool: 'pdf.stamp_image', params: { position: 'bottom-right', scalePct: 22 } });
-    explanations.push('Menempelkan gambar/stempel ke pojok kanan bawah halaman PDF');
-  }
-
-  // 15. Watermark (PDF or Image)
-  if (p.includes('watermark') || p.includes('cap ') || p.includes('beri cap') || p.includes('stempel teks')) {
-    let text = 'INTERNAL';
-    if (quotedText) {
-      text = quotedText;
-    } else if (p.includes('rahasia') || p.includes('confidential')) {
-      text = 'RAHASIA';
-    } else if (p.includes('draft')) {
-      text = 'DRAFT';
-    } else if (p.includes('salinan') || p.includes('copy')) {
-      text = 'SALINAN';
-    }
-    if (hasImages && !hasPdf) {
-      steps.push({
-        tool: 'image.watermark',
-        params: { text, opacity: 0.35, position: 'center-diagonal' },
-      });
-      explanations.push(`Menambahkan watermark '${text}' pada gambar`);
-    } else {
-      steps.push({
-        tool: 'pdf.watermark',
-        params: { text, opacity: 0.2, position: 'center-diagonal' },
-      });
-      explanations.push(`Menambahkan watermark '${text}' miring di tengah halaman PDF`);
-    }
-  }
-
-  // 16. Page numbering
-  if (
-    p.includes('nomor halaman') ||
-    p.includes('penomoran') ||
-    p.includes('page number') ||
-    p.includes('halaman di bawah')
-  ) {
-    steps.push({
-      tool: 'pdf.page_numbers',
-      params: { position: 'bottom-center', format: 'page-of-total' },
-    });
-    explanations.push('Menambahkan nomor halaman di bagian tengah bawah PDF');
-  }
-
-  // 17. Image Resize
-  if (p.includes('resize') || p.includes('ubah ukuran gambar') || p.includes('resolusi')) {
-    const dimMatch = p.match(/(\d{2,4})\s*[x×]\s*(\d{2,4})/i) || p.match(/\b(\d{3,4})\s*px\b/i);
-    const width = dimMatch ? Number(dimMatch[1]) : 1280;
-    const height = dimMatch?.[2] ? Number(dimMatch[2]) : undefined;
-    steps.push({
-      tool: 'image.resize',
-      params: { width, ...(height ? { height } : {}), fit: 'inside' },
-    });
-    explanations.push(`Mengubah ukuran dimensi gambar ke lebar ${width}px`);
-  }
-
-  // 18. Image Format Conversion (PNG / JPEG / WebP / ICO)
-  if (
-    p.includes('ke webp') ||
-    p.includes('jadi webp') ||
-    p.includes('ke png') ||
-    p.includes('jadi png') ||
-    p.includes('ke jpg') ||
-    p.includes('jadi jpg') ||
-    p.includes('ke ico') ||
-    p.includes('jadi ico') ||
-    p.includes('favicon')
-  ) {
-    const targetFormat =
-      p.includes('ico') || p.includes('favicon')
-        ? 'ico'
-        : p.includes('webp')
-          ? 'webp'
-          : p.includes('png')
-            ? 'png'
-            : 'jpeg';
-    if (hasPdf && !hasImages && targetFormat !== 'ico') {
-      steps.push({ tool: 'pdf.to_images', params: { format: targetFormat, scale: 2, quality: 90 } });
-      explanations.push(`Mengonversi halaman PDF menjadi gambar ${targetFormat.toUpperCase()}`);
-    } else {
-      steps.push({ tool: 'image.convert', params: { format: targetFormat, quality: 90 } });
-      explanations.push(`Mengonversi format gambar menjadi ${targetFormat.toUpperCase()}`);
-    }
-  }
-
-  // 19. Document Scan Enhancer & Grid / ID Card Sheet
-  if (p.includes('perjelas scan') || p.includes('hitam putih') || p.includes('tajamkan scan') || p.includes('scan enhance')) {
-    steps.push({ tool: 'image.scan_enhance', params: { mode: 'bw-document', contrast: 1.35 } });
-    explanations.push('Memperjelas dan menajamkan kontras dokumen hasil foto/scan');
-  }
-
-  if (p.includes('kolase') || p.includes('grid') || p.includes('pasfoto') || p.includes('lembar ktp')) {
-    steps.push({ tool: 'image.grid_sheet', params: { columns: 2, pageSize: 'A4' } });
-    explanations.push('Menyusun kumpulan foto ke dalam satu lembar kisi-kisi (Grid Sheet)');
-  }
-
-  // 20. Image Info
-  if (p.includes('info gambar') || p.includes('cek dimensi') || p.includes('detail foto')) {
-    steps.push({ tool: 'image.info', params: {} });
-    explanations.push('Memeriksa dimensi, format, dan ukuran file gambar');
-  }
-
-  // 21. Compress PDF or Image
-  if (
-    p.includes('kompres') ||
-    p.includes('compress') ||
-    p.includes('perkecil') ||
-    p.includes('hemat')
-  ) {
-    if (hasImages && !hasPdf && steps.length === 0) {
-      steps.push({ tool: 'image.compress', params: { quality: 80, format: 'jpeg' } });
-      explanations.push('Mengompresi file gambar dengan kualitas optimal 80%');
-    } else {
-      steps.push({ tool: 'pdf.compress', params: { quality: 'medium' } });
-      explanations.push('Mengompresi ukuran PDF secara optimal');
-    }
-  }
-
-  // 22. Convert PDF to images
-  if (
-    (p.includes('pdf ke gambar') || p.includes('ekstrak gambar') || p.includes('to image')) &&
-    !steps.some((s) => s.tool === 'pdf.to_images')
-  ) {
-    steps.push({ tool: 'pdf.to_images', params: { format: 'jpeg', scale: 2, quality: 90 } });
-    explanations.push('Merender halaman PDF menjadi gambar JPEG resolusi tinggi');
-  }
-
-  // 23. Extract text
-  if (p.includes('ekstrak teks') || p.includes('extract text') || p.includes('ambil teks') || p.includes('baca teks')) {
-    steps.push({ tool: 'pdf.extract_text', params: { includePositions: false } });
-    explanations.push('Mengekstrak seluruh isi teks dari dokumen PDF');
-  }
-
-  // 24. Extract tables
-  if (
-    (p.includes('tabel') || p.includes('table')) &&
-    !steps.some((s) => s.tool === 'util.table_to_pdf')
-  ) {
-    steps.push({ tool: 'pdf.extract_tables', params: {} });
-    explanations.push('Mendeteksi kisi-kisi dan mengekstrak struktur tabel dari PDF');
-  }
-
-  // 25. Hash / Checksum
-  if (p.includes('sha256') || p.includes('sha-256') || p.includes('sha512') || p.includes('sha1') || p.includes('checksum') || p.includes('hash')) {
-    const algorithm = p.includes('512') ? 'SHA-512' : p.includes('sha1') || p.includes('sha-1') ? 'SHA-1' : 'SHA-256';
-    steps.push({ tool: 'util.hash_checksum', params: { algorithm } });
-    explanations.push(`Menghitung sidik jari kriptografi ${algorithm} file`);
-  }
-
-  // 26. Pack into ZIP archive (can be standalone or chained at the end of any pipeline!)
-  if (
-    (p.includes('zip') || p.includes('arsip')) &&
-    !steps.some((s) => s.tool === 'util.zip_unpack')
-  ) {
-    steps.push({ tool: 'util.zip_pack', params: { archiveName: 'hasil_worktools.zip' } });
-    explanations.push('Mengemas seluruh file hasil pemrosesan ke dalam arsip ZIP');
-  }
-
-  if (steps.length === 0) return null;
-
-  return {
-    steps,
-    explanation: explanations.join(' lalu dilanjutkan dengan ') + '.',
-  };
 }
 
 function renderFormattedText(text: string) {
@@ -770,15 +377,19 @@ export const AIChatStudio: React.FC<AIChatStudioProps> = ({
   const [attachedFiles, setAttachedFiles] = useState<VirtualFile[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const [expandedPreviews, setExpandedPreviews] = useState<Record<string, boolean>>({});
+  const [copiedPreviewKey, setCopiedPreviewKey] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Auto-scroll to bottom of messages
+  // Auto-scroll only inside chat container so window scroll/navbar never shifts
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const el = chatContainerRef.current;
+    if (!el || (messages.length === 0 && !isProcessing)) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
   }, [messages, isProcessing]);
 
   // Save messages to localStorage
@@ -1260,6 +871,7 @@ export const AIChatStudio: React.FC<AIChatStudioProps> = ({
                   ? {
                       ...m.toolCall,
                       status: 'completed',
+                      stepResults: res.steps,
                       summary: `Berhasil mengeksekusi ${steps.length} langkah dalam ${durationMs}ms`,
                       durationMs,
                     }
@@ -1379,98 +991,100 @@ export const AIChatStudio: React.FC<AIChatStudioProps> = ({
       }
     }
 
+    // Shared helper for Gemini Antigravity & OpenAI-Compatible Local LLMs (exposes all 38 tools + tenggoo_pipeline_run)
+    const requestOpenAiToolChat = async (params: {
+      endpoint: string;
+      model: string;
+      headers: Record<string, string>;
+      systemPrompt: string;
+    }): Promise<boolean> => {
+      const fileContext =
+        currentFiles.length > 0
+          ? `\n\n[File Lampiran Saat Ini: ${currentFiles.map((f) => `${f.name} (${f.mimeType}, ${formatByteSize(f.bytes.byteLength)})`).join(', ')}]`
+          : '\n\n[Belum ada file terlampir]';
+
+      const body = {
+        model: params.model,
+        messages: [
+          { role: 'system', content: params.systemPrompt },
+          { role: 'user', content: `${text}${fileContext}` },
+        ],
+        tools: buildAiFunctionTools(),
+        tool_choice: 'auto',
+      };
+
+      const res = await localAiFetch(params.endpoint, {
+        method: 'POST',
+        headers: params.headers,
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) return false;
+
+      interface OpenAiResponseChoice {
+        message?: {
+          content?: string;
+          tool_calls?: RawAiToolCall[];
+        };
+      }
+      const data = (await res.json()) as { choices?: OpenAiResponseChoice[] };
+      const choice = data.choices?.[0]?.message;
+      if (!choice) return false;
+
+      let steps = Array.isArray(choice.tool_calls) ? parseAiToolCalls(choice.tool_calls) : [];
+      if (steps.length === 0) {
+        const fallback = resolveIntentFromPrompt(text, currentFiles);
+        if (fallback) steps = fallback.steps;
+      }
+
+      const hasSteps = steps.length > 0;
+      const firstToolDef = hasSteps ? getTool(steps[0].tool) : undefined;
+      const canRunWithoutFiles = hasSteps && firstToolDef?.minInputs === 0;
+      const shouldExecuteNow =
+        hasSteps && config.autoExecute && (currentFiles.length > 0 || canRunWithoutFiles);
+
+      const assistantMessage: ChatMessage = {
+        id: assistantMsgId,
+        sender: 'assistant',
+        text: choice.content || 'Saya telah merancang aksi pemrosesan untuk dokumen Anda:',
+        timestamp: Date.now(),
+        toolCall: hasSteps
+          ? {
+              tool: steps[0].tool,
+              params: steps[0].params ?? {},
+              steps,
+              status: shouldExecuteNow ? 'running' : 'pending',
+              summary:
+                steps.length > 1
+                  ? `Pipeline ${steps.length} langkah`
+                  : `Menjalankan tool: ${steps[0].tool}`,
+            }
+          : undefined,
+      };
+
+      setMessages((prev) => [...prev, assistantMessage]);
+
+      if (shouldExecuteNow) {
+        await executePipelineSteps(steps, currentFiles, assistantMsgId);
+      }
+
+      setIsProcessing(false);
+      return true;
+    };
+
     // Provider 2: Google Gemini (Antigravity)
     if (config.provider === 'gemini-antigravity' && config.geminiApiKey) {
       try {
-        const endpoint = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
-        const headers: Record<string, string> = {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${config.geminiApiKey}`,
-        };
-
-        const toolsPayload = listTools().slice(0, 25).map((t: ToolDefinition) => ({
-          type: 'function',
-          function: {
-            name: t.id.replace('.', '_'),
-            description: t.description,
-            parameters: t.parameterSchema,
-          },
-        }));
-
-        const body = {
+        const handled = await requestOpenAiToolChat({
+          endpoint: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
           model: config.geminiModel || 'gemini-2.0-flash',
-          messages: [
-            {
-              role: 'system',
-              content:
-                'Anda adalah asisten AI resmi untuk Tenggoo Work Tool Super App (didukung Antigravity & Gemini). Anda membantu pengguna memproses dokumen PDF, gambar, dan utilitas menggunakan tools yang tersedia. Balas dengan bahasa Indonesia yang ramah, ringkas, dan jelas.',
-            },
-            { role: 'user', content: text },
-          ],
-          tools: toolsPayload,
-          tool_choice: 'auto',
-        };
-
-        const res = await fetch(endpoint, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(body),
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${config.geminiApiKey}`,
+          },
+          systemPrompt:
+            'Anda adalah asisten AI resmi untuk WorkTools Super App (didukung Gemini / Antigravity). Seluruh 38 fungsi PDF, Gambar, dan Utilitas serta tenggoo_pipeline_run tersedia sebagai function tools. Pilih tool atau rangkai steps yang tepat untuk tugas user. Balas dengan bahasa Indonesia yang ramah, ringkas, dan jelas.',
         });
-
-        if (res.ok) {
-          interface OpenAiResponseChoice {
-            message?: {
-              content?: string;
-              tool_calls?: {
-                id: string;
-                function: { name: string; arguments: string };
-              }[];
-            };
-          }
-          const data = (await res.json()) as { choices?: OpenAiResponseChoice[] };
-          const choice = data.choices?.[0]?.message;
-
-          if (choice) {
-            const toolCall = choice.tool_calls?.[0];
-            let steps: PipelineStep[] | undefined = undefined;
-
-            if (toolCall) {
-              const originalToolId = toolCall.function.name.replace('_', '.');
-              let parsedParams = {};
-              try {
-                parsedParams = JSON.parse(toolCall.function.arguments) as Record<string, unknown>;
-              } catch {
-                // Ignore parse errors
-              }
-              steps = [{ tool: originalToolId, params: parsedParams }];
-            }
-
-            const assistantMessage: ChatMessage = {
-              id: assistantMsgId,
-              sender: 'assistant',
-              text: choice.content || 'Saya telah merancang aksi pemrosesan untuk dokumen Anda:',
-              timestamp: Date.now(),
-              toolCall: steps
-                ? {
-                    tool: steps[0].tool,
-                    params: steps[0].params ?? {},
-                    steps,
-                    status: config.autoExecute && currentFiles.length > 0 ? 'running' : 'pending',
-                    summary: `Menjalankan tool: ${steps[0].tool}`,
-                  }
-                : undefined,
-            };
-
-            setMessages((prev) => [...prev, assistantMessage]);
-
-            if (config.autoExecute && steps && currentFiles.length > 0) {
-              await executePipelineSteps(steps, currentFiles, assistantMsgId);
-            }
-
-            setIsProcessing(false);
-            return;
-          }
-        }
+        if (handled) return;
       } catch (err) {
         console.warn('Gemini Antigravity call failed, falling back to local intent parser:', err);
       }
@@ -1481,97 +1095,18 @@ export const AIChatStudio: React.FC<AIChatStudioProps> = ({
       const urlCheck = validateAiEndpointUrl(config.openaiUrl);
       if (urlCheck.ok) {
         try {
-          const endpoint = `${urlCheck.url}/chat/completions`;
-          const headers: Record<string, string> = {
-            'Content-Type': 'application/json',
-          };
+          const headers: Record<string, string> = { 'Content-Type': 'application/json' };
           if (config.openaiApiKey) {
             headers.Authorization = `Bearer ${config.openaiApiKey}`;
           }
-
-          const toolsPayload = listTools().slice(0, 25).map((t: ToolDefinition) => ({
-            type: 'function',
-            function: {
-              name: t.id.replace('.', '_'),
-              description: t.description,
-              parameters: t.parameterSchema,
-            },
-          }));
-
-          const body = {
+          const handled = await requestOpenAiToolChat({
+            endpoint: `${urlCheck.url}/chat/completions`,
             model: config.openaiModel,
-            messages: [
-              {
-                role: 'system',
-                content:
-                  'Anda adalah asisten AI resmi untuk Tenggoo Work Tool Super App. Anda membantu pengguna memproses file PDF, gambar, dan utilitas menggunakan tools yang tersedia. Balas dengan bahasa Indonesia yang ramah, ringkas, dan jelas.',
-              },
-              { role: 'user', content: text },
-            ],
-            tools: toolsPayload,
-            tool_choice: 'auto',
-          };
-
-          const res = await localAiFetch(endpoint, {
-            method: 'POST',
             headers,
-            body: JSON.stringify(body),
+            systemPrompt:
+              'Anda adalah asisten AI lokal untuk WorkTools Super App. Gunakan function tools (38 tool individu atau tenggoo_pipeline_run) untuk memproses PDF, gambar, dan utilitas. Balas dengan bahasa Indonesia yang ringkas dan jelas.',
           });
-
-          if (res.ok) {
-            interface OpenAiResponseChoice {
-              message?: {
-                content?: string;
-                tool_calls?: {
-                  id: string;
-                  function: { name: string; arguments: string };
-                }[];
-              };
-            }
-            const data = (await res.json()) as { choices?: OpenAiResponseChoice[] };
-            const choice = data.choices?.[0]?.message;
-
-            if (choice) {
-              const toolCall = choice.tool_calls?.[0];
-              let steps: PipelineStep[] | undefined = undefined;
-
-              if (toolCall) {
-                const originalToolId = toolCall.function.name.replace('_', '.');
-                let parsedParams = {};
-                try {
-                  parsedParams = JSON.parse(toolCall.function.arguments) as Record<string, unknown>;
-                } catch {
-                  // Ignore parse errors
-                }
-                steps = [{ tool: originalToolId, params: parsedParams }];
-              }
-
-              const assistantMessage: ChatMessage = {
-                id: assistantMsgId,
-                sender: 'assistant',
-                text: choice.content || 'Saya telah menyiapkan aksi pemrosesan untuk dokumen Anda:',
-                timestamp: Date.now(),
-                toolCall: steps
-                  ? {
-                      tool: steps[0].tool,
-                      params: steps[0].params ?? {},
-                      steps,
-                      status: config.autoExecute && currentFiles.length > 0 ? 'running' : 'pending',
-                      summary: `Menjalankan tool: ${steps[0].tool}`,
-                    }
-                  : undefined,
-              };
-
-              setMessages((prev) => [...prev, assistantMessage]);
-
-              if (config.autoExecute && steps && currentFiles.length > 0) {
-                await executePipelineSteps(steps, currentFiles, assistantMsgId);
-              }
-
-              setIsProcessing(false);
-              return;
-            }
-          }
+          if (handled) return;
         } catch (err) {
           console.warn('OpenAI compatible call failed, falling back to local intent parser:', err);
         }
@@ -1782,6 +1317,7 @@ export const AIChatStudio: React.FC<AIChatStudioProps> = ({
 
       {/* Main Chat Stream Container */}
       <div
+        ref={chatContainerRef}
         onDragOver={(e) => {
           e.preventDefault();
           setDragActive(true);
@@ -1924,17 +1460,26 @@ export const AIChatStudio: React.FC<AIChatStudioProps> = ({
                         <div className="space-y-1">
                           {msg.toolCall.steps.map((st, sIdx) => {
                             const def = getTool(st.tool);
+                            const stepLog = msg.toolCall?.stepResults?.[sIdx];
                             return (
                               <div
                                 key={`step-${sIdx}`}
-                                className="flex items-center justify-between text-[11px] bg-slate-50 px-2 py-1.5 rounded-lg border border-slate-100"
+                                className="flex flex-col gap-0.5 text-[11px] bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-100"
                               >
-                                <span className="font-semibold text-slate-700 truncate">
-                                  {sIdx + 1}. {def ? def.name : st.tool}
-                                </span>
-                                <span className="font-mono text-[10px] text-slate-400">
-                                  {st.tool}
-                                </span>
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="font-semibold text-slate-700 truncate">
+                                    {sIdx + 1}. {def ? def.name : st.tool}
+                                  </span>
+                                  <span className="font-mono text-[10px] text-slate-400 shrink-0">
+                                    {stepLog ? `${stepLog.durationMs}ms · ` : ''}
+                                    {st.tool}
+                                  </span>
+                                </div>
+                                {stepLog?.summary && (
+                                  <span className="text-[10px] text-slate-500">
+                                    {stepLog.summary}
+                                  </span>
+                                )}
                               </div>
                             );
                           })}
@@ -1955,7 +1500,7 @@ export const AIChatStudio: React.FC<AIChatStudioProps> = ({
 
                       {/* Manual trigger button if still pending */}
                       {msg.toolCall.status === 'pending' && msg.toolCall.steps && (
-                        attachedFiles.length === 0 ? (
+                        attachedFiles.length === 0 && getTool(msg.toolCall.steps[0].tool)?.minInputs !== 0 ? (
                           <button
                             type="button"
                             onClick={() => fileInputRef.current?.click()}
@@ -1979,9 +1524,31 @@ export const AIChatStudio: React.FC<AIChatStudioProps> = ({
                             className="w-full mt-1 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition-colors"
                           >
                             <Play size={13} />
-                            <span>Jalankan Sekarang ({attachedFiles.length} file terpilih)</span>
+                            <span>
+                              {attachedFiles.length > 0
+                                ? `Jalankan Sekarang (${attachedFiles.length} file terpilih)`
+                                : 'Jalankan Sekarang'}
+                            </span>
                           </button>
                         )
+                      )}
+
+                      {onSendToPipeline && msg.toolCall.steps && msg.toolCall.steps.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onSendToPipeline(
+                              msg.outputFiles && msg.outputFiles.length > 0
+                                ? msg.outputFiles
+                                : attachedFiles,
+                              msg.toolCall?.steps,
+                            )
+                          }
+                          className="w-full mt-1 py-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-700 text-[11px] font-semibold flex items-center justify-center gap-1.5 border border-slate-200 transition-colors"
+                        >
+                          <SlidersHorizontal size={12} />
+                          <span>Buka &amp; Edit Langkah di Visual Pipeline Studio</span>
+                        </button>
                       )}
                     </div>
                   )}
@@ -2005,44 +1572,117 @@ export const AIChatStudio: React.FC<AIChatStudioProps> = ({
                         )}
                       </div>
 
-                      <div className="space-y-1.5">
-                        {msg.outputFiles.map((file, fIdx) => (
-                          <div
-                            key={`out-f-${fIdx}`}
-                            className="flex items-center justify-between bg-white px-3 py-2 rounded-lg border border-emerald-200 text-xs shadow-sm"
-                          >
-                            <div className="flex items-center gap-2 min-w-0">
-                              <FileText size={14} className="text-emerald-600 shrink-0" />
-                              <span className="font-semibold text-slate-800 truncate">
-                                {file.name}
-                              </span>
-                              <span className="text-[10px] text-slate-500">
-                                ({formatByteSize(file.bytes.byteLength)})
-                              </span>
-                            </div>
+                      <div className="space-y-2">
+                        {msg.outputFiles.map((file, fIdx) => {
+                          const previewKey = `${msg.id}-${fIdx}`;
+                          const canPreviewText = isTextPreviewable(file);
+                          const isExpanded = Boolean(expandedPreviews[previewKey]);
+                          const preview = isExpanded && canPreviewText ? decodeTextPreview(file) : null;
 
-                            <button
-                              type="button"
-                              onClick={() => downloadVirtualFile(file)}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold shadow-sm transition-colors shrink-0"
+                          return (
+                            <div
+                              key={`out-f-${fIdx}`}
+                              className="bg-white px-3 py-2 rounded-lg border border-emerald-200 text-xs shadow-sm space-y-2"
                             >
-                              <Download size={12} />
-                              <span>Unduh</span>
-                            </button>
-                          </div>
-                        ))}
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <FileText size={14} className="text-emerald-600 shrink-0" />
+                                  <span className="font-semibold text-slate-800 truncate">
+                                    {file.name}
+                                  </span>
+                                  <span className="text-[10px] text-slate-500 shrink-0">
+                                    ({formatByteSize(file.bytes.byteLength)})
+                                  </span>
+                                </div>
+
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  {canPreviewText && (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setExpandedPreviews((prev) => ({
+                                          ...prev,
+                                          [previewKey]: !prev[previewKey],
+                                        }))
+                                      }
+                                      className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-semibold transition-colors"
+                                    >
+                                      <Eye size={12} />
+                                      <span>{isExpanded ? 'Tutup' : 'Pratinjau'}</span>
+                                      {isExpanded ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+                                    </button>
+                                  )}
+
+                                  <button
+                                    type="button"
+                                    onClick={() => downloadVirtualFile(file)}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold shadow-sm transition-colors shrink-0"
+                                  >
+                                    <Download size={12} />
+                                    <span>Unduh</span>
+                                  </button>
+                                </div>
+                              </div>
+
+                              {preview && (
+                                <div className="rounded-lg bg-slate-950 text-slate-100 p-2.5 space-y-2">
+                                  <div className="flex items-center justify-between text-[10px] text-slate-400">
+                                    <span>Pratinjau Teks / JSON</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        void navigator.clipboard.writeText(
+                                          new TextDecoder().decode(file.bytes),
+                                        );
+                                        setCopiedPreviewKey(previewKey);
+                                        window.setTimeout(() => setCopiedPreviewKey(null), 1800);
+                                      }}
+                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-100 font-semibold"
+                                    >
+                                      {copiedPreviewKey === previewKey ? (
+                                        <Check size={10} className="text-emerald-400" />
+                                      ) : (
+                                        <Copy size={10} />
+                                      )}
+                                      <span>
+                                        {copiedPreviewKey === previewKey ? 'Tersalin' : 'Salin Isi'}
+                                      </span>
+                                    </button>
+                                  </div>
+                                  <pre className="text-[11px] font-mono whitespace-pre-wrap break-words max-h-48 overflow-y-auto text-emerald-200">
+                                    {preview.text}
+                                  </pre>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
 
-                      {onSendToPipeline && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-0.5">
                         <button
                           type="button"
-                          onClick={() => onSendToPipeline(msg.outputFiles!)}
-                          className="w-full mt-1 inline-flex items-center justify-center gap-1.5 text-xs font-semibold text-indigo-700 hover:text-indigo-900 bg-white py-1.5 rounded-lg border border-indigo-200 transition-colors"
+                          onClick={() => {
+                            setAttachedFiles(msg.outputFiles!);
+                            textareaRef.current?.focus();
+                          }}
+                          className="w-full inline-flex items-center justify-center gap-1.5 text-[11px] font-semibold text-emerald-800 hover:text-emerald-950 bg-white py-1.5 px-2.5 rounded-lg border border-emerald-200 transition-colors"
                         >
-                          <Workflow size={13} />
-                          <span>Kirim File Ini ke Visual Pipeline Studio</span>
+                          <Paperclip size={12} />
+                          <span>Jadikan Lampiran Berikutnya</span>
                         </button>
-                      )}
+
+                        {onSendToPipeline && (
+                          <button
+                            type="button"
+                            onClick={() => onSendToPipeline(msg.outputFiles!, msg.toolCall?.steps)}
+                            className="w-full inline-flex items-center justify-center gap-1.5 text-[11px] font-semibold text-indigo-700 hover:text-indigo-900 bg-white py-1.5 px-2.5 rounded-lg border border-indigo-200 transition-colors"
+                          >
+                            <Workflow size={12} />
+                            <span>Kirim ke Visual Pipeline Studio</span>
+                          </button>
+                        )}
+                      </div>
                     </div>
                   )}
 
@@ -2092,8 +1732,6 @@ export const AIChatStudio: React.FC<AIChatStudioProps> = ({
             </div>
           </div>
         )}
-
-        <div ref={messagesEndRef} />
       </div>
 
       {/* Input Box & Attachment Tray */}

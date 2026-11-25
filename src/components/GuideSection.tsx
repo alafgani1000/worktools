@@ -52,7 +52,7 @@ const CopyButton: React.FC<{ text: string; label?: string }> = ({ text, label = 
 const CURRENT_ORIGIN =
   typeof window !== 'undefined' && window.location?.origin
     ? window.location.origin
-    : 'https://worktools.my.id';
+    : 'https://app.worktools.my.id';
 const OPENCODE_SERVE_CMD = `opencode serve --port 4096 --cors ${CURRENT_ORIGIN}`;
 
 const OPENCODE_JSON_SNIPPET = `{
@@ -95,10 +95,11 @@ node bin/tenggoo.mjs pipeline \\
 
 const SAMPLE_CHAT_PROMPTS = [
   'Gabungkan file-file PDF ini menjadi satu dokumen, lalu tambahkan nomor halaman di tengah bawah.',
-  'Tolong kompres file ini agar ukurannya lebih kecil dan hemat ruang penyimpanan.',
+  'Sensor otomatis semua NIK dan email di dokumen PDF ini secara permanen lalu kompres agar ringkas.',
+  'Rapikan hasil scan kertas dengan memutihkan latar belakang, susun grid A4 2 kolom, lalu jadikan PDF.',
   "Tambahkan watermark teks 'RAHASIA' miring di tengah semua halaman PDF.",
   'Ekstrak seluruh teks dan deteksi tabel dari dokumen PDF ini.',
-  'Ubah setiap halaman PDF menjadi gambar JPG kualitas tinggi lalu bungkus dalam file ZIP.',
+  'Ubah setiap halaman PDF menjadi gambar JPG kualitas tinggi lalu bungkus ke dalam file ZIP.',
 ];
 
 export const GuideSection: React.FC<GuideSectionProps> = ({
@@ -275,7 +276,7 @@ export const GuideSection: React.FC<GuideSectionProps> = ({
                 <div>
                   <h3 className="text-sm font-semibold text-[#1D1D1F]">AI &amp; Otomasi (AI Chat Studio + Visual Pipeline Studio)</h3>
                   <p className="text-xs text-[#6E6E73] mt-0.5 leading-relaxed">
-                    Jalankan perintah bahasa alami melalui <strong>AI Chat Studio</strong> atau rangkai kombinasi langkah lintas domain PDF + Gambar + ZIP di <strong>Visual Pipeline Studio</strong> (lengkap dengan preset tersimpan &amp; ekspor <code>.pipeline.json</code>).
+                    Jalankan perintah bahasa alami melalui <strong>AI Chat Studio</strong> (dilengkapi pratinjau teks inline &amp; handoff langkah ke Pipeline) atau susun rangkaian multi-domain PDF + Gambar + ZIP di <strong>Visual Pipeline Studio</strong> dengan <strong>AI Pipeline Builder</strong>, 6 preset cepat, toggle <em>Aktif/Dilewati</em>, deteksi kecocokan format I/O, pratinjau multi-file, &amp; ekspor <code>.pipeline.json</code>.
                   </p>
                 </div>
               </div>
@@ -296,7 +297,7 @@ export const GuideSection: React.FC<GuideSectionProps> = ({
                 </li>
                 <li className="flex items-center gap-1.5">
                   <Workflow size={12} className="text-[#0071E3] shrink-0" />
-                  <span>Di Visual Pipeline Studio, Anda bisa mengekspor resep ke <code>.pipeline.json</code> atau menyalin perintah CLI/MCP-nya.</span>
+                  <span>Di <strong>Visual Pipeline Studio</strong>, ketik instruksi pada <em>AI Pipeline Builder</em>, lewati/duplikat langkah, rantai ulang hasil, atau salin perintah <code>--step</code> CLI &amp; MCP.</span>
                 </li>
               </ul>
             </div>
@@ -367,8 +368,8 @@ export const GuideSection: React.FC<GuideSectionProps> = ({
                 <p>Tulis perintah Anda. Jika <em>Auto-Execute</em> aktif, pipeline langsung berjalan di browser.</p>
               </div>
               <div className="p-3.5 rounded-[16px] bg-[#F5F5F7]/80 border border-black/[0.04] space-y-1">
-                <span className="font-semibold text-[#1D1D1F] block">4. Unduh / Lanjutkan</span>
-                <p>Simpan file hasil satu per satu, sebagai ZIP, atau kirim ke Visual Pipeline Studio.</p>
+                <span className="font-semibold text-[#1D1D1F] block">4. Pratinjau, Rantai &amp; Edit</span>
+                <p>Pratinjau output teks/JSON langsung di chat, jadikan lampiran berikutnya, atau buka langkahnya di Visual Pipeline Studio.</p>
               </div>
             </div>
           </section>
@@ -386,7 +387,7 @@ export const GuideSection: React.FC<GuideSectionProps> = ({
                   <span>1. Built-in Offline (Tanpa Server)</span>
                 </div>
                 <p className="text-xs text-[#1D1D1F]/80 leading-relaxed">
-                  Langsung siap dipakai meski tanpa koneksi internet atau API key. Mengenali perintah bahasa Indonesia &amp; Inggris seperti <code>gabung</code>, <code>watermark</code>, <code>nomor halaman</code>, <code>kompres</code>, <code>pdf ke gambar</code> + <code>zip</code>, <code>ekstrak teks</code>, <code>tabel</code>, dan <code>qr</code>.
+                  Langsung siap dipakai secara offline tanpa koneksi internet maupun API key. Mengenali perintah multi-langkah bahasa Indonesia &amp; Inggris lengkap dengan ekstraksi parameter (seperti posisi watermark/halaman, profil kompresi, rasio crop, sensor NIK/Email, rapikan scan, hingga nama file <code>.zip</code>).
                 </p>
               </div>
 
@@ -404,7 +405,7 @@ export const GuideSection: React.FC<GuideSectionProps> = ({
                   <CopyButton text={OPENCODE_SERVE_CMD} />
                 </div>
                 <p className="text-[11px] text-[#6E6E73]">
-                  Jika web di-hosting di HTTPS, ganti nilai <code>--cors</code> menjadi domain situs Anda (misal <code>https://worktools.pages.dev</code>).
+                  Jika web di-hosting di HTTPS, ganti nilai <code>--cors</code> menjadi domain app (misal <code>https://app.worktools.my.id</code>), atau gunakan aplikasi Desktop agar otomatis terhubung tanpa CORS.
                 </p>
               </div>
 
@@ -415,10 +416,10 @@ export const GuideSection: React.FC<GuideSectionProps> = ({
                   <span>3. Antigravity (Google Gemini)</span>
                 </div>
                 <p className="text-xs text-[#1D1D1F]/80 leading-relaxed">
-                  Memanggil endpoint resmi Google Gemini (<code>gemini-2.0-flash</code>, <code>gemini-2.0-pro-exp-02-05</code>, <code>gemini-2.0-flash-thinking-exp-01-21</code>, <code>gemini-1.5-pro</code>, <code>gemini-1.5-flash</code>) dengan <em>function calling</em> langsung ke 25+ tool teratas.
+                  Memanggil endpoint resmi Google Gemini (<code>gemini-2.0-flash</code>, <code>gemini-2.0-pro-exp-02-05</code>, <code>gemini-2.0-flash-thinking-exp-01-21</code>, <code>gemini-1.5-pro</code>, <code>gemini-1.5-flash</code>) dengan <em>function calling</em> ke seluruh <strong>38 tool</strong> plus <code>tenggoo_pipeline_run</code>.
                 </p>
                 <p className="text-[11px] text-[#6E6E73]">
-                  API Key hanya disimpan secara lokal di <code>localStorage</code> browser Anda dan tidak dikirim ke server lain selain Google API.
+                  Secara bawaan, API Key hanya disimpan sementara di <code>sessionStorage</code> dan terhapus saat tab ditutup (tersedia opsi opt-in <em>Simpan API Key Permanen</em>).
                 </p>
               </div>
 

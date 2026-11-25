@@ -1,13 +1,21 @@
-# Work Tool Super App
+# WorkTools (Work Tool Super App)
 
-**Work Tool Super App** adalah toolkit pengolah file **100% lokal (Client-Side & On-Device)** untuk Web, Desktop (Tauri), **AI Chat Studio (`#ai-chat`)**, dan **AI Agent** (**OpenCode**, **Antigravity**, Codex, Claude Code, Cursor). Seluruh **38 fungsi** PDF, Image, dan Utility dibangun di atas satu *Headless Core Engine* (`src/core/`) sehingga dapat digunakan secara interaktif lewat antarmuka web maupun dipanggil langsung oleh AI Agent melalui **Chat AI**, **MCP Server (`tenggoo-mcp`)**, **CLI (`tenggoo`)**, dan **TypeScript SDK**.
+**WorkTools** adalah toolkit pengolah file **100% lokal (Client-Side & On-Device)** untuk Web (`https://app.worktools.my.id`), Product Landing (`https://worktools.my.id`), Desktop Windows (Tauri v2), **AI Chat Studio (`#ai-chat`)**, dan **AI Agent** (**OpenCode**, **Antigravity**, Codex, Claude Code, Cursor). Seluruh **38 fungsi** PDF, Image, dan Utility dibangun di atas satu *Headless Core Engine* (`src/core/`) sehingga dapat dipakai interaktif melalui UI maupun dipanggil oleh AI Agent lewat **Chat AI**, **MCP Server (`tenggoo-mcp`)**, **CLI (`tenggoo`)**, dan **TypeScript SDK**.
+
+---
+
+## Arsitektur Situs Live & Rilis Desktop
+
+- **Halaman Utama (Landing Page):** [https://worktools.my.id](https://worktools.my.id) — kode di [landing/](landing/), konfigurasi build [vite.landing.config.ts](vite.landing.config.ts), deploy via [wrangler.landing.jsonc](wrangler.landing.jsonc) (`dist-landing/`).
+- **Web App (Aplikasi Lengkap):** [https://app.worktools.my.id](https://app.worktools.my.id) — build di `dist/`, deploy via [wrangler.jsonc](wrangler.jsonc) (`worktools-app`).
+- **Aplikasi Desktop Windows (Tauri v2):** Rilis `.exe` & `.msi` (`WorkTools` `v1.0.0`) dilengkapi jembatan TCP lokal Rust (`tauri_ai_http_request`, `tauri_ai_ensure_opencode`) agar OpenCode & Ollama berjalan bebas dari batasan CORS browser.
 
 ---
 
 ## Dokumentasi Lengkap
 
-- **[Panduan Integrasi AI Agent & Chat Studio](docs/AI_AGENT_INTEGRATION.md)** — Setup **AI Chat Studio** (OpenCode `opencode serve`, Antigravity/Gemini, Local LLM Ollama/LM Studio, Built-in Offline), konfigurasi **MCP Server**, **CLI**, dan *troubleshooting*.
-- **[Arsitektur & Panduan Pengembang](docs/ARCHITECTURE.md)** — Diagram arsitektur, peta direktori, konsep `VirtualFile`, navigasi hash/UI, dan cara menambah tool baru.
+- **[Panduan Integrasi AI Agent, Chat Studio & Visual Pipeline](docs/AI_AGENT_INTEGRATION.md)** — Setup **AI Chat Studio** (Built-in Offline, OpenCode `opencode serve`, Antigravity/Gemini, Ollama/LM Studio), **Visual Pipeline Studio** (*AI Pipeline Builder*, preset, & kontrol langkah), **MCP Server**, **CLI**, dan *troubleshooting*.
+- **[Arsitektur & Panduan Pengembang](docs/ARCHITECTURE.md)** — Diagram arsitektur, peta direktori (termasuk `landing/` & `src/utils/aiIntentParser.ts`), konsep `VirtualFile`, navigasi hash/UI, serta panduan build & deploy Cloudflare.
 - **[Katalog 38 Tool & Skema Parameter (Agent Skill)](skills/tenggoo-toolkit/SKILL.md)** — Referensi lengkap parameter seluruh tool (`pdf.*`, `image.*`, `util.*`) dan nama MCP-nya.
 
 ---
@@ -43,9 +51,14 @@
 - **File Checksum (`util.hash_checksum`)**: hitung hash integritas `SHA-256`, `SHA-1`, `SHA-512`.
 
 ### 4. AI Chat Studio, Visual Pipeline, & Antarmuka Minimalis
-- **AI Agent & Chat Studio (`#ai-chat`)**: instruksikan pemrosesan multi-file lewat obrolan bahasa alami. Mendukung **OpenCode** (`opencode serve` dengan deteksi model otomatis), **Antigravity (Google Gemini)**, **Local LLM (Ollama / LM Studio)**, serta **Built-in Offline Mode**.
-- **Visual Pipeline Studio (`#pipeline`)**: rangkai alur multi-langkah, simpan preset kustom, serta ekspor/impor `.pipeline.json`.
-- **Katalog Minimalis & Command Palette (`Ctrl+K`)**: layar beranda bersih tanpa sidebar ganda, dilengkapi filter kategori pill (`39` entri katalog termasuk AI Chat & Pipeline) dan pencarian cepat.
+- **AI Agent & Chat Studio (`#ai-chat`):** Instruksikan pemrosesan multi-file lewat obrolan bahasa alami.
+  - Default **Built-in Offline** memakai parser intent multi-langkah di [src/utils/aiIntentParser.ts](src/utils/aiIntentParser.ts) yang mengekstrak parameter (posisi watermark/halaman, profil kompresi, rasio crop, sensor PII/NIK, mode scan, hingga nama file ZIP) dan melacak transisi tipe media antar-langkah.
+  - **Antigravity (Google Gemini)** & **Local LLM (Ollama / LM Studio)** kini menerima definisi seluruh **38 tool** + **`tenggoo_pipeline_run`** via *function calling* lengkap dengan konteks file lampiran dan dukungan banyak langkah dalam satu giliran.
+  - Mendukung log eksekusi per langkah (`stepResults`), pratinjau isi teks/JSON langsung di chat, **Jadikan Lampiran Berikutnya**, serta tombol **Buka & Edit Langkah di Visual Pipeline Studio**.
+- **Visual Pipeline Studio (`#pipeline`):**
+  - Dilengkapi **AI Pipeline Builder** (susun blok pipeline otomatis dari deskripsi teks bahasa alami), **6 preset kombinasi bawaan**, penyimpanan preset kustom, serta ekspor/impor `.pipeline.json`.
+  - Kontrol langkah lengkap: toggle **Aktif / Dilewati**, **Duplikat langkah**, **Reset parameter**, penanda format I/O + peringatan kompatibilitas tipe file antar-langkah, pratinjau multi-file (PDF, Gambar, & Teks/JSON), **Jadikan Hasil sebagai Input Baru**, serta salin perintah CLI (`--step Flags` & `--steps JSON`) dan payload MCP.
+- **Katalog Minimalis & Command Palette (`Ctrl+K`):** Layar beranda bersih (`39` entri katalog dalam 5 domain kategori) dengan filter kategori pill, daftar favorit/terbaru, dan pencarian cepat.
 
 ---
 
@@ -116,15 +129,24 @@ Prasyarat: **Node.js 22+**.
 # Install dependencies
 npm install
 
-# Jalankan GUI Web (Vite + React)
+# Jalankan GUI Web App (Vite + React)
 npm run dev
 
-# Jalankan seluruh automated test suite (38 tools + pipeline + CLI + MCP)
+# Jalankan Landing Page (Vite)
+npm run dev:landing
+
+# Jalankan seluruh automated test suite (38 tools + pipeline + CLI + MCP + parser AI)
 npm test
 
-# Jalankan ESLint & Production Build
+# Linting & Build Produksi (Web App -> dist/, Landing Page -> dist-landing/)
 npm run lint
 npm run build
+npm run build:landing
+
+# Deploy ke Cloudflare Workers Static Assets
+npm run deploy:app      # -> https://app.worktools.my.id
+npm run deploy:landing  # -> https://worktools.my.id
+npm run deploy:all
 ```
 
 ### Mode Desktop (Tauri)
@@ -135,4 +157,4 @@ npm run desktop:build
 
 ## Privasi & Keamanan
 - Seluruh pemrosesan berkas (PDF, gambar, redaksi, konversi, arsip ZIP, dan mode Built-in AI Chat) berjalan **100% lokal di perangkat Anda** tanpa mengunggah file dokumen ke server eksternal.
-- Apabila Anda mengaktifkan provider AI eksternal pada **AI Chat Studio** (misalnya **Antigravity / Google Gemini API** atau endpoint **OpenCode** jarak jauh), hanya teks prompt/metadata instruksi yang dikirim ke penyedia model yang Anda pilih; API key hanya disimpan secara lokal di browser (`localStorage`).
+- Apabila Anda mengaktifkan provider AI eksternal pada **AI Chat Studio** (misalnya **Antigravity / Google Gemini API** atau endpoint **OpenCode** jarak jauh), hanya teks prompt/metadata instruksi yang dikirim ke penyedia model yang Anda pilih. Secara bawaan, API key dan password hanya disimpan sementara di `sessionStorage` dan otomatis terhapus saat tab ditutup (tersedia opsi *opt-in* untuk menyimpannya di `localStorage`).

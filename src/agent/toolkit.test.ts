@@ -962,3 +962,86 @@ test('Security: Zip Slip, Path Traversal, MCP Workspace Sandbox, PII Masking, Re
     await rm(tmpRoot, { recursive: true, force: true });
   }
 });
+
+test('AI Intent Parser & Function Calling: 39 tool schemas, multi-step NLP, media tracking & step compatibility', async () => {
+  const {
+    resolveIntentFromPrompt,
+    buildAiFunctionTools,
+    parseAiToolCalls,
+    checkPipelineStepCompatibility,
+  } = await import('../utils/aiIntentParser.ts');
+
+  // 1. Exposes all 38 tools + tenggoo_pipeline_run (39 total)
+  const fnTools = buildAiFunctionTools();
+  assert.equal(fnTools.length, 39);
+  assert.ok(fnTools.some((t) => t.function.name === 'tenggoo_pipeline_run'));
+  assert.ok(fnTools.some((t) => t.function.name === 'tenggoo_pdf_redact_text'));
+
+  // 2. Multi-step NLP extraction + custom params
+  const multi = resolveIntentFromPrompt(
+    "Gabung PDF, sensor nik, beri watermark 'RAHASIA' di atas, nomor halaman kanan bawah, kompres kuat, lalu kemas ke paket_aman.zip",
+  );
+  assert.ok(multi);
+  assert.deepEqual(
+    multi.steps.map((s) => s.tool),
+    [
+      'pdf.merge',
+      'pdf.redact_text',
+      'pdf.watermark',
+      'pdf.page_numbers',
+      'pdf.compress',
+      'util.zip_pack',
+    ],
+  );
+  assert.equal(multi.steps[1].params?.presetPattern, 'nik');
+  assert.equal(multi.steps[2].params?.text, 'RAHASIA');
+  assert.equal(multi.steps[2].params?.position, 'top');
+  assert.equal(multi.steps[3].params?.position, 'bottom-right');
+  assert.equal(multi.steps[4].params?.quality, 'low');
+  assert.equal(multi.steps[5].params?.archiveName, 'paket_aman.zip');
+
+  // 3. Tracks media transition from PDF -> Image within the same prompt
+  const crossMedia = resolveIntentFromPrompt('Ubah PDF ke gambar JPG lalu kompres ringan');
+  assert.ok(crossMedia);
+  assert.deepEqual(
+    crossMedia.steps.map((s) => s.tool),
+    ['pdf.to_images', 'image.compress'],
+  );
+
+  // 4. Parses both tenggoo_pipeline_run and multi-call tool responses
+  const parsedMultiCall = parseAiToolCalls([
+    { function: { name: 'tenggoo_pdf_merge', arguments: '{}' } },
+    { function: { name: 'tenggoo_pdf_compress', arguments: '{"quality":"low"}' } },
+  ]);
+  assert.deepEqual(parsedMultiCall, [
+    { tool: 'pdf.merge', params: {} },
+    { tool: 'pdf.compress', params: { quality: 'low' } },
+  ]);
+
+  const parsedPipelineCall = parseAiToolCalls([
+    {
+      function: {
+        name: 'tenggoo_pipeline_run',
+        arguments: JSON.stringify({
+          steps: [
+            { tool: 'pdf.merge', params: {} },
+            { tool: 'util.zip_pack', params: { archiveName: 'out.zip' } },
+          ],
+        }),
+      },
+    },
+  ]);
+  assert.deepEqual(parsedPipelineCall, [
+    { tool: 'pdf.merge', params: {} },
+    { tool: 'util.zip_pack', params: { archiveName: 'out.zip' } },
+  ]);
+
+  // 5. Pipeline step compatibility warnings
+  const incompatible = checkPipelineStepCompatibility('pdf.merge', 'image.compress');
+  assert.equal(incompatible.compatible, false);
+  assert.match(String(incompatible.warning), /pdf\.to_images/);
+
+  const compatible = checkPipelineStepCompatibility('pdf.to_images', 'image.compress');
+  assert.equal(compatible.compatible, true);
+});
+

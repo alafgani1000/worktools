@@ -28,7 +28,7 @@ import {
 } from './components/navigationCatalog';
 import { FAQSection, PrivacyPolicyView } from './components/FAQSection';
 import { GuideSection, type GuideTab } from './components/GuideSection';
-import type { VirtualFile } from './core/types';
+import type { PipelineStep, VirtualFile } from './core/types';
 import {
   Archive,
   BookOpen,
@@ -119,6 +119,9 @@ function App() {
   const [pendingPipelineFiles, setPendingPipelineFiles] = useState<VirtualFile[] | undefined>(
     undefined,
   );
+  const [pendingPipelineSteps, setPendingPipelineSteps] = useState<PipelineStep[] | undefined>(
+    undefined,
+  );
   const [pipelineTransferVersion, setPipelineTransferVersion] = useState(0);
   const [isPaletteOpen, setIsPaletteOpen] = useState(false);
 
@@ -171,6 +174,7 @@ function App() {
     setActiveView({ kind: 'hub' });
     setMobileDrawerOpen(false);
     window.history.pushState(null, '', '#semua-fitur');
+    window.scrollTo({ top: 0 });
   }, []);
 
   const openGuide = useCallback((tab: GuideTab = 'app') => {
@@ -178,6 +182,7 @@ function App() {
     setMobileDrawerOpen(false);
     const hash = tab === 'ai-chat' ? '#panduan-ai' : tab === 'agent-mcp' ? '#panduan-mcp' : '#panduan';
     window.history.pushState(null, '', hash);
+    window.scrollTo({ top: 0 });
   }, []);
 
   const openCategoryHub = useCallback((cat: 'all' | NavCategoryId) => {
@@ -194,18 +199,21 @@ function App() {
       });
     }
     window.history.pushState(null, '', '#semua-fitur');
+    window.scrollTo({ top: 0 });
   }, []);
 
   const openPrivacy = useCallback(() => {
     setActiveView({ kind: 'privacy' });
     setMobileDrawerOpen(false);
     window.history.pushState(null, '', '#privacy-policy');
+    window.scrollTo({ top: 0 });
   }, []);
 
   const openFaq = useCallback(() => {
     setActiveView({ kind: 'faq' });
     setMobileDrawerOpen(false);
     window.history.pushState(null, '', '#faq');
+    window.scrollTo({ top: 0 });
   }, []);
 
   const recordRecentTool = useCallback((toolId: string) => {
@@ -233,6 +241,7 @@ function App() {
       setMobileDrawerOpen(false);
       recordRecentTool(tool.id);
       window.history.pushState(null, '', `#${tool.hash}`);
+      window.scrollTo({ top: 0 });
     },
     [recordRecentTool],
   );
@@ -252,14 +261,16 @@ function App() {
   }, []);
 
   const handleSendToPipeline = useCallback(
-    (files: VirtualFile[]) => {
+    (files: VirtualFile[], steps?: PipelineStep[]) => {
       const pipelineTool = findNavToolById('pipeline:studio');
       setPendingPipelineFiles(files);
+      setPendingPipelineSteps(steps && steps.length > 0 ? steps : undefined);
       setPipelineTransferVersion((v) => v + 1);
       if (pipelineTool) {
         setActiveView({ kind: 'tool', toolId: pipelineTool.id });
         recordRecentTool(pipelineTool.id);
         window.history.pushState(null, '', `#${pipelineTool.hash}`);
+        window.scrollTo({ top: 0 });
       }
     },
     [recordRecentTool],
@@ -937,6 +948,7 @@ function App() {
       <PipelineStudio
         key={pipelineTransferVersion}
         initialInputFiles={pendingPipelineFiles}
+        initialSteps={pendingPipelineSteps}
       />
     );
   };

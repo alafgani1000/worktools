@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-[#F5F5F7] text-[#1D1D1F] font-sans antialiased min-h-screen overflow-x-hidden selection:bg-[#0071E3] selection:text-white;
+  }
+}
+
+@layer utilities {
+  .apple-glass {
+    @apply bg-[#FBFBFD]/80 backdrop-blur-xl border-b border-black/[0.06];
+  }
+
+  .apple-card {
+    @apply bg-white rounded-[24px] border border-black/[0.05] shadow-[0_2px_16px_rgba(0,0,0,0.03)];
+  }
+}

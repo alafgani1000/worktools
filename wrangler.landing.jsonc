@@ -1,0 +1,15 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "worktools",
+  "compatibility_date": "2026-11-23",
+  "assets": {
+    "directory": "./dist-landing",
+    "not_found_handling": "single-page-application"
+  },
+  "routes": [
+    {
+      "pattern": "worktools.my.id",
+      "custom_domain": true
+    }
+  ]
+}
