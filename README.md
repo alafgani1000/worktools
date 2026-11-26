@@ -8,7 +8,7 @@
 
 - **Halaman Utama (Landing Page):** [https://worktools.my.id](https://worktools.my.id) — kode di [landing/](landing/), konfigurasi build [vite.landing.config.ts](vite.landing.config.ts), deploy via [wrangler.landing.jsonc](wrangler.landing.jsonc) (`dist-landing/`).
 - **Web App (Aplikasi Lengkap):** [https://app.worktools.my.id](https://app.worktools.my.id) — build di `dist/`, deploy via [wrangler.jsonc](wrangler.jsonc) (`worktools-app`).
-- **Aplikasi Desktop Windows (Tauri v2):** Rilis `.exe` & `.msi` (`WorkTools` `v1.0.0`) dilengkapi jembatan TCP lokal Rust (`tauri_ai_http_request`, `tauri_ai_ensure_opencode`) agar OpenCode & Ollama berjalan bebas dari batasan CORS browser.
+- **Aplikasi Desktop Windows (Tauri v2):** Rilis `.exe` & `.msi` (`WorkTools` `v1.1.0`) dilengkapi jembatan TCP lokal Rust (`tauri_ai_http_request`, `tauri_ai_ensure_opencode`) agar OpenCode & Ollama berjalan bebas dari batasan CORS browser.
 
 ---
 

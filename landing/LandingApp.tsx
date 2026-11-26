@@ -29,9 +29,9 @@ import {
 const APP_URL = 'https://app.worktools.my.id';
 const REPO_URL = 'https://github.com/alafgani1000/worktools';
 const RELEASES_URL = `${REPO_URL}/releases/latest`;
-const FALLBACK_VERSION = 'v1.0.0';
-const FALLBACK_EXE_URL = `${REPO_URL}/releases/download/v1.0.0/WorkTools_1.0.0_x64-setup.exe`;
-const FALLBACK_MSI_URL = `${REPO_URL}/releases/download/v1.0.0/WorkTools_1.0.0_x64_en-US.msi`;
+const FALLBACK_VERSION = 'v1.1.0';
+const FALLBACK_EXE_URL = `${REPO_URL}/releases/download/v1.1.0/WorkTools_1.1.0_x64-setup.exe`;
+const FALLBACK_MSI_URL = `${REPO_URL}/releases/download/v1.1.0/WorkTools_1.1.0_x64_en-US.msi`;
 const GITHUB_API_LATEST = 'https://api.github.com/repos/alafgani1000/worktools/releases/latest';
 
 const CLI_SNIPPET = `# Jalankan pipeline PDF & ZIP langsung dari terminal

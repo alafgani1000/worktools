@@ -35,8 +35,13 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: 'Work Tools Desktop ${{ github.ref_name }}'
-          releaseBody: 'Work Tools Desktop release for ${{ github.ref_name }} (100% Local PDF, Image, Utilities & Native Local AI Bridge).'
+          releaseName: 'WorkTools Desktop ${{ github.ref_name }}'
+          releaseBody: |
+            ### WorkTools Desktop ${{ github.ref_name }} (Windows x64)
+
+            - **AI Agent & Chat Studio:** Function calling lengkap (38 tool + `tenggoo_pipeline_run`), engine intent offline multi-langkah (`src/utils/aiIntentParser.ts`), log eksekusi per langkah, pratinjau teks/JSON inline, & *handoff* langsung ke Pipeline Studio.
+            - **Visual Pipeline Studio:** AI Pipeline Builder (susun blok otomatis dari bahasa alami), 6 preset cepat, toggle *Aktif/Dilewati*, duplikat/reset langkah, deteksi kompatibilitas I/O, pratinjau multi-file, & ekspor CLI `--step`/`--steps` + MCP.
+            - **100% Lokal di Perangkat:** 38 alat PDF, Gambar, & Utilitas tanpa unggah ke server, dilengkapi Rust loopback HTTP bridge & auto-starter untuk OpenCode / Ollama bebas CORS.
           releaseDraft: false
           prerelease: false
 
