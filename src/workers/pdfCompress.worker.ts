@@ -39,6 +39,8 @@ const postProgress = (progress: number) => {
   workerScope.postMessage(payload);
 };
 
+const MAX_COMPRESS_INPUT_BYTES = 150 * 1024 * 1024;
+
 const workerScope: DedicatedWorkerGlobalScope = self as DedicatedWorkerGlobalScope;
 
 workerScope.onmessage = async (event: MessageEvent<CompressRequest>) => {
@@ -46,6 +48,24 @@ workerScope.onmessage = async (event: MessageEvent<CompressRequest>) => {
 
   const { fileBuffer, quality } = event.data;
   const cfg = QUALITY_ARGS[quality];
+  if (!cfg) {
+    const payload: WorkerError = {
+      type: 'error',
+      message: 'Unsupported compression quality preset.',
+    };
+    workerScope.postMessage(payload);
+    return;
+  }
+
+  if (!fileBuffer || fileBuffer.byteLength === 0 || fileBuffer.byteLength > MAX_COMPRESS_INPUT_BYTES) {
+    const payload: WorkerError = {
+      type: 'error',
+      message: `PDF input size is invalid or exceeds ${Math.round(MAX_COMPRESS_INPUT_BYTES / (1024 * 1024))} MB worker limit.`,
+    };
+    workerScope.postMessage(payload);
+    return;
+  }
+
   const outputFileName = 'output.pdf';
   const stderrLogs: string[] = [];
 

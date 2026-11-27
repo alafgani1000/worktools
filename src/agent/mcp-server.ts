@@ -1,5 +1,5 @@
 import { tmpdir } from 'node:os';
-import { delimiter, resolve } from 'node:path';
+import { delimiter, join, resolve } from 'node:path';
 import { getTool, listTools } from '../core/registry.ts';
 import { runPipeline } from '../core/pipeline.ts';
 import { formatByteSize } from '../core/types.ts';
@@ -18,7 +18,7 @@ function getAllowedRoots(): string[] {
       .map((s) => resolve(s));
     if (parsed.length > 0) return parsed;
   }
-  return [resolve(process.cwd()), resolve(tmpdir())];
+  return [resolve(process.cwd()), resolve(join(tmpdir(), 'worktools'))];
 }
 
 interface JsonRpcRequest {
@@ -254,7 +254,7 @@ async function dispatchRequest(req: JsonRpcRequest): Promise<void> {
       },
       serverInfo: {
         name: 'tenggoo-toolkit',
-        version: '0.4.0',
+        version: '1.1.1',
       },
     });
     return;
@@ -292,8 +292,11 @@ async function dispatchRequest(req: JsonRpcRequest): Promise<void> {
   }
 }
 
+const MAX_STDIN_LINE_BYTES = 10 * 1024 * 1024;
+
 function startMcpServer(): void {
   let buffer = '';
+  let droppingOversizedLine = false;
   let chain = Promise.resolve();
 
   const enqueueLine = (line: string) => {
@@ -313,18 +316,49 @@ function startMcpServer(): void {
   process.stdin.setEncoding('utf-8');
   process.stdin.on('data', (chunk: string) => {
     buffer += chunk;
+
+    if (droppingOversizedLine) {
+      const newlineIdx = buffer.indexOf('\n');
+      if (newlineIdx === -1) {
+        buffer = '';
+        return;
+      }
+      buffer = buffer.slice(newlineIdx + 1);
+      droppingOversizedLine = false;
+    }
+
     let newlineIndex = buffer.indexOf('\n');
     while (newlineIndex !== -1) {
       const line = buffer.slice(0, newlineIndex);
       buffer = buffer.slice(newlineIndex + 1);
-      enqueueLine(line);
+      if (Buffer.byteLength(line, 'utf-8') > MAX_STDIN_LINE_BYTES) {
+        process.stderr.write('[tenggoo-mcp] Request line exceeds 10 MB limit and was dropped.\n');
+        sendError(null, -32600, 'Request exceeds maximum allowed size');
+      } else {
+        enqueueLine(line);
+      }
       newlineIndex = buffer.indexOf('\n');
+    }
+
+    if (Buffer.byteLength(buffer, 'utf-8') > MAX_STDIN_LINE_BYTES) {
+      process.stderr.write('[tenggoo-mcp] Buffered stdin exceeded 10 MB limit without newline.\n');
+      sendError(null, -32600, 'Request exceeds maximum allowed size');
+      buffer = '';
+      droppingOversizedLine = true;
     }
   });
 
   process.stdin.on('end', () => {
+    if (droppingOversizedLine) {
+      buffer = '';
+      return;
+    }
     if (buffer.trim()) {
-      enqueueLine(buffer);
+      if (Buffer.byteLength(buffer, 'utf-8') > MAX_STDIN_LINE_BYTES) {
+        sendError(null, -32600, 'Request exceeds maximum allowed size');
+      } else {
+        enqueueLine(buffer);
+      }
       buffer = '';
     }
   });

@@ -34,7 +34,7 @@ Engine intent lokal pintar di [src/utils/aiIntentParser.ts](../src/utils/aiInten
 #### B. OpenCode (`opencode serve`)
 Menghubungkan Chat Studio ke server backend [OpenCode](https://opencode.ai) untuk mengakses model seperti Claude, GPT, DeepSeek, atau Gemini melalui endpoint lokal.
 1. **Mode Web:** Jalankan `opencode serve --port 4096 --cors https://app.worktools.my.id` (atau asal Vite `http://localhost:5173`), isi URL/Password jika ada, lalu klik **Uji Koneksi**. Model aktif otomatis dimuat melalui `GET /provider`.
-2. **Mode Desktop Windows (`WorkTools.exe`):** Aplikasi Desktop memakai jembatan TCP Rust (`tauri_ai_ensure_opencode` & `tauri_ai_http_request`) sehingga dapat menyalakan dan menghubungi OpenCode di `127.0.0.1` tanpa hambatan CORS browser.
+2. **Mode Desktop Windows (`WorkTools.exe`):** Aplikasi Desktop memakai jembatan TCP Rust (`tauri_ai_ensure_opencode` & `tauri_ai_http_request`) sehingga dapat menyalakan dan menghubungi OpenCode di `127.0.0.1` / `localhost` / `[::1]` tanpa hambatan CORS browser. Demi keamanan, jembatan Rust hanya mengizinkan port standar layanan AI lokal (`1234`, `1337`, `3000`, `3001`, `4096`–`4098`, `5000`, `5001`, `7860`, `8000`, `8001`, `8080`, `8081`, `11434`, `11435`) serta port OpenCode yang dinyalakan oleh `tauri_ai_ensure_opencode`, memvalidasi header HTTP, dan memblokir port loopback non-AI.
 
 #### C. Antigravity (Google Gemini)
 Memakai endpoint OpenAI-compatible resmi Google Gemini (`https://generativelanguage.googleapis.com/v1beta/openai/chat/completions`) dengan dukungan *function calling* ke seluruh **38 tool** + **`tenggoo_pipeline_run`**.
@@ -71,6 +71,10 @@ Tool yang bersifat hanya-baca / inspeksi otomatis melewati penulisan file ke dis
 - `pdf.metadata` *(ketika `action` bernilai `'inspect'` atau kosong)*
 - `image.info`
 - `util.hash_checksum`
+
+### Keamanan Sandbox & Batas Sumber Daya MCP
+- Gunakan variabel environment `TENGGOO_WORKSPACE_ROOT` atau `TENGGOO_ALLOWED_ROOTS` untuk membatasi direktori kerja yang boleh diakses oleh MCP Server dan `cli.ts --steps-file`. Jika tidak diset, akses bawaan dibatasi ke `process.cwd()` dan subdirektori khusus `<tmpdir>/worktools`.
+- Seluruh path diverifikasi melalui resolusi *canonical path* (`realpath`) untuk mencegah symlink traversal, dengan batas input bawaan `200 MB` per file (`500 MB` total) dan batas ukuran baris `stdin` JSON-RPC `10 MB`.
 
 ### Contoh Konfigurasi untuk OpenCode (`opencode.json`)
 ```json

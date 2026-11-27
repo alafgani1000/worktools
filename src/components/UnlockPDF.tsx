@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { PDFDocument } from 'pdf-lib';
 import { FileDropzone } from './FileDropzone';
-import { pdfjsLib, renderPageToCanvas } from '../utils/pdfjs';
+import { loadPdfDocumentSafe, renderPageToCanvas } from '../utils/pdfjs';
 import { 
   KeyRound, 
   Lock, 
@@ -32,7 +32,7 @@ export const UnlockPDF: React.FC = () => {
     // Test whether file is encrypted or plain
     try {
       const buffer = await selected.arrayBuffer();
-      const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(buffer) });
+      const loadingTask = loadPdfDocumentSafe(buffer);
       await loadingTask.promise;
       setFileNeedsPassword(false);
     } catch (err: unknown) {
@@ -54,10 +54,9 @@ export const UnlockPDF: React.FC = () => {
     try {
       const buffer = await file.arrayBuffer();
       
-      // Load document using pdfjs with password
-      const loadingTask = pdfjsLib.getDocument({ 
-        data: new Uint8Array(buffer), 
-        password: password.trim() 
+      // Load document using pdfjs with password and eval disabled
+      const loadingTask = loadPdfDocumentSafe(buffer, {
+        password: password.trim(),
       });
 
       const pdfDocProxy = await loadingTask.promise.catch((err: unknown) => {

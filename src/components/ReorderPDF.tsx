@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { PDFDocument, degrees } from 'pdf-lib';
 import { FileDropzone } from './FileDropzone';
-import { pdfjsLib, renderPageThumbnail } from '../utils/pdfjs';
+import { loadPdfDocumentSafe, renderPageThumbnail } from '../utils/pdfjs';
 import { 
   ArrowLeftRight, 
   Download, 
@@ -42,7 +42,7 @@ export const ReorderPDF: React.FC = () => {
 
     try {
       const arrayBuffer = await selectedFile.arrayBuffer();
-      const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) });
+      const loadingTask = loadPdfDocumentSafe(arrayBuffer);
       const pdfDoc = await loadingTask.promise;
       const numPages = pdfDoc.numPages;
 

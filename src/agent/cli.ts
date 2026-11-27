@@ -1,10 +1,10 @@
-import { readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { readFile, stat } from 'node:fs/promises';
+import { delimiter, resolve } from 'node:path';
 import { getTool, listTools } from '../core/registry.ts';
 import { runPipeline } from '../core/pipeline.ts';
 import { formatByteSize } from '../core/types.ts';
 import type { PipelineStep, ToolCategory } from '../core/types.ts';
-import { readInputPaths, writeOutputFiles } from './fileIO.ts';
+import { assertPathAllowed, readInputPaths, writeOutputFiles } from './fileIO.ts';
 
 function parsePrimitive(raw: string): unknown {
   const trimmed = raw.trim();
@@ -342,7 +342,21 @@ async function main(): Promise<void> {
   if (command === 'pipeline') {
     let steps: PipelineStep[] = [];
     if (parsed.stepsFile) {
-      const rawFile = await readFile(resolve(parsed.stepsFile), 'utf-8');
+      const configuredRoots =
+        process.env.TENGGOO_WORKSPACE_ROOT || process.env.TENGGOO_ALLOWED_ROOTS || '';
+      const allowedRoots = configuredRoots.trim()
+        ? configuredRoots
+            .split(configuredRoots.includes(delimiter) ? delimiter : ',')
+            .map((s) => s.trim())
+            .filter(Boolean)
+            .map((s) => resolve(s))
+        : undefined;
+      const stepsPath = await assertPathAllowed(parsed.stepsFile, allowedRoots);
+      const info = await stat(stepsPath);
+      if (info.size > 5 * 1024 * 1024) {
+        throw new Error('Steps file exceeds maximum allowed size (5 MB).');
+      }
+      const rawFile = await readFile(stepsPath, 'utf-8');
       steps = JSON.parse(rawFile) as PipelineStep[];
     } else if (parsed.stepsJson) {
       steps = JSON.parse(parsed.stepsJson) as PipelineStep[];

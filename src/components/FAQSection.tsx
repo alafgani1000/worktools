@@ -350,8 +350,9 @@ export const FAQSection: React.FC<FAQSectionProps> = ({ onOpenPrivacy }) => {
           eksternal opsional (seperti <strong>Antigravity / Google Gemini API</strong> atau server{' '}
           <strong>OpenCode</strong> jarak jauh), hanya teks prompt dan metadata perintah yang dikirim
           untuk merancang langkah tool &mdash; berkas PDF maupun gambar Anda tetap diolah di memori
-          browser dan tidak pernah diunggah. API Key hanya disimpan di <code>localStorage</code>{' '}
-          browser Anda.
+          browser dan tidak pernah diunggah. Secara bawaan, API Key hanya disimpan sementara di{' '}
+          <code>sessionStorage</code> (otomatis terhapus saat tab ditutup), dengan opsi opt-in{' '}
+          <em>Simpan API Key Permanen</em> ke <code>localStorage</code>.
         </p>
       ),
     },

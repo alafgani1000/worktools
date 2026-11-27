@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import { FileDropzone } from './FileDropzone.tsx';
 import { ALL_TOOLS, getTool } from '../core/registry.ts';
-import { runPipeline } from '../core/pipeline.ts';
+import { MAX_PIPELINE_STEPS, runPipeline } from '../core/pipeline.ts';
 import { formatByteSize } from '../core/types.ts';
 import type {
   PipelineExecutionResult,
@@ -382,13 +382,41 @@ export const PipelineStudio: React.FC<PipelineStudioProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
     try {
+      if (file.size > 1024 * 1024) {
+        throw new Error('Ukuran file .pipeline.json melebihi batas maksimum 1 MB.');
+      }
       const text = await file.text();
-      const parsed = JSON.parse(text) as { steps?: PipelineStep[] } | PipelineStep[];
-      const importedSteps = Array.isArray(parsed) ? parsed : parsed.steps;
+      const parsed = JSON.parse(text) as { steps?: unknown } | unknown[];
+      const importedSteps = Array.isArray(parsed)
+        ? parsed
+        : parsed && typeof parsed === 'object'
+          ? parsed.steps
+          : null;
       if (!Array.isArray(importedSteps) || importedSteps.length === 0) {
         throw new Error('Format .pipeline.json tidak valid.');
       }
-      setSteps(importedSteps.map((s) => makeStep(s.tool, s.params)));
+      if (importedSteps.length > MAX_PIPELINE_STEPS) {
+        throw new Error(`Pipeline melebihi batas maksimum ${MAX_PIPELINE_STEPS} langkah.`);
+      }
+      const sanitizedSteps: EditableStep[] = importedSteps.map((rawStep, idx) => {
+        if (!rawStep || typeof rawStep !== 'object' || Array.isArray(rawStep)) {
+          throw new Error(`Langkah ke-${idx + 1} pada file JSON tidak valid.`);
+        }
+        const rec = rawStep as Record<string, unknown>;
+        const toolId = typeof rec.tool === 'string' ? rec.tool.trim() : '';
+        if (!toolId || !getTool(toolId)) {
+          throw new Error(`Tool tidak dikenal "${toolId || '(kosong)'}" pada langkah ke-${idx + 1}.`);
+        }
+        const cleanParams: Record<string, unknown> = {};
+        if (rec.params && typeof rec.params === 'object' && !Array.isArray(rec.params)) {
+          for (const [k, v] of Object.entries(rec.params as Record<string, unknown>)) {
+            if (k === '__proto__' || k === 'constructor' || k === 'prototype') continue;
+            cleanParams[k] = v;
+          }
+        }
+        return makeStep(toolId, cleanParams);
+      });
+      setSteps(sanitizedSteps);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));

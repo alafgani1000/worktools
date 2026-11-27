@@ -769,7 +769,10 @@ test('Integration: MCP Server (bin/tenggoo-mcp.mjs) JSON-RPC 2.0 protocol, 39 to
     ];
 
     const responses = await new Promise<Record<string, unknown>[]>((resolvePromise, rejectPromise) => {
-      const child = spawn(process.execPath, [mcpBin], { stdio: ['pipe', 'pipe', 'pipe'] });
+      const child = spawn(process.execPath, [mcpBin], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: { ...process.env, TENGGOO_WORKSPACE_ROOT: tmpDir },
+      });
       let stdoutBuf = '';
       let stderrBuf = '';
 
@@ -809,8 +812,9 @@ test('Integration: MCP Server (bin/tenggoo-mcp.mjs) JSON-RPC 2.0 protocol, 39 to
     }
 
     // 1. initialize
-    const initRes = byId.get(1)?.result as { serverInfo?: { name: string } };
+    const initRes = byId.get(1)?.result as { serverInfo?: { name: string; version: string } };
     assert.equal(initRes?.serverInfo?.name, 'tenggoo-toolkit');
+    assert.equal(initRes?.serverInfo?.version, '1.1.1');
 
     // 2. ping
     assert.deepEqual(byId.get(2)?.result, {});
@@ -884,14 +888,25 @@ test('Security: Zip Slip, Path Traversal, MCP Workspace Sandbox, PII Masking, Re
   });
   assert.equal(packed.files[0].name, 'escape.zip');
 
-  // 3. writeOutputFiles enforces allowedRoots sandbox
-  const { writeOutputFiles } = await import('./fileIO.ts');
+  // 3. writeOutputFiles, readInputPaths & assertPathAllowed enforce allowedRoots, limits & canonical paths
+  const { assertPathAllowed, readInputPaths, writeOutputFiles } = await import('./fileIO.ts');
   const sandboxDir = await mkdtemp(join(tmpdir(), 'tenggoo-sec-sandbox-'));
   try {
     const outsidePath = resolve(process.cwd(), 'forbidden_outside_write.pdf');
     await assert.rejects(
       () => writeOutputFiles([md1.files[0]], outsidePath, { allowedRoots: [sandboxDir] }),
       /Access denied/,
+    );
+
+    const writtenAllowed = await writeOutputFiles([md1.files[0]], join(sandboxDir, 'sample.pdf'), {
+      allowedRoots: [sandboxDir],
+    });
+    const canonicalChecked = await assertPathAllowed(writtenAllowed[0], [sandboxDir]);
+    assert.equal(canonicalChecked, await (await import('node:fs/promises')).realpath(writtenAllowed[0]));
+
+    await assert.rejects(
+      () => readInputPaths([writtenAllowed[0]], { allowedRoots: [sandboxDir], maxFileBytes: 10 }),
+      /exceeds maximum allowed limit/i,
     );
   } finally {
     await rm(sandboxDir, { recursive: true, force: true });
@@ -958,6 +973,42 @@ test('Security: Zip Slip, Path Traversal, MCP Workspace Sandbox, PII Masking, Re
     const callRes = resp.result as { isError?: boolean; content: { text: string }[] };
     assert.equal(callRes.isError, true);
     assert.match(callRes.content[0].text, /Access denied/);
+
+    // 7. MCP server default temp scope denies arbitrary directory directly in os.tmpdir()
+    const cleanEnv = { ...process.env };
+    delete cleanEnv.TENGGOO_WORKSPACE_ROOT;
+    delete cleanEnv.TENGGOO_ALLOWED_ROOTS;
+    const tmpDeniedTarget = join(tmpRoot, 'default_scope_denied.png');
+    const reqDefault = {
+      jsonrpc: '2.0',
+      id: 100,
+      method: 'tools/call',
+      params: {
+        name: 'tenggoo_util_qr_generate',
+        arguments: { text: 'https://tenggoo.my.id', output_path: tmpDeniedTarget },
+      },
+    };
+    const respDefault = await new Promise<Record<string, unknown>>((resolvePromise, rejectPromise) => {
+      const child = spawn(process.execPath, [mcpBin], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: cleanEnv,
+      });
+      let stdoutBuf = '';
+      child.stdout.setEncoding('utf-8');
+      child.stdout.on('data', (chunk: string) => {
+        stdoutBuf += chunk;
+      });
+      child.on('error', rejectPromise);
+      child.on('close', () => {
+        const line = stdoutBuf.trim().split('\n')[0];
+        resolvePromise(JSON.parse(line) as Record<string, unknown>);
+      });
+      child.stdin.write(`${JSON.stringify(reqDefault)}\n`);
+      child.stdin.end();
+    });
+    const callDefaultRes = respDefault.result as { isError?: boolean; content: { text: string }[] };
+    assert.equal(callDefaultRes.isError, true);
+    assert.match(callDefaultRes.content[0].text, /Access denied/);
   } finally {
     await rm(tmpRoot, { recursive: true, force: true });
   }

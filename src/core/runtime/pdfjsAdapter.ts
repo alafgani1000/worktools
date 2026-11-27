@@ -72,12 +72,8 @@ export async function loadPdfDocument(
   dataCopy.set(bytes);
 
   if (isBrowserRuntime()) {
-    const { pdfjsLib } = await import('../../utils/pdfjs.ts');
-    const task = pdfjsLib.getDocument({
-      data: dataCopy,
-      isEvalSupported: false,
-      ...(password !== undefined ? { password } : {}),
-    });
+    const { loadPdfDocumentSafe } = await import('../../utils/pdfjs.ts');
+    const task = loadPdfDocumentSafe(dataCopy, password !== undefined ? { password } : undefined);
     return (await task.promise) as unknown as PdfDocumentLike;
   }
 

@@ -7,6 +7,20 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
 export { pdfjsLib };
 
 /**
+ * Load a PDF document cleanly via a centralized helper using patched pdfjs-dist (>=6.5.x).
+ */
+export function loadPdfDocumentSafe(
+  data: Uint8Array | ArrayBuffer,
+  options?: { password?: string },
+) {
+  const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
+  return pdfjsLib.getDocument({
+    data: bytes,
+    ...(options?.password !== undefined ? { password: options.password } : {}),
+  });
+}
+
+/**
  * Render a single PDF page into a canvas
  */
 export async function renderPageToCanvas(

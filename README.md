@@ -8,7 +8,7 @@
 
 - **Halaman Utama (Landing Page):** [https://worktools.my.id](https://worktools.my.id) — kode di [landing/](landing/), konfigurasi build [vite.landing.config.ts](vite.landing.config.ts), deploy via [wrangler.landing.jsonc](wrangler.landing.jsonc) (`dist-landing/`).
 - **Web App (Aplikasi Lengkap):** [https://app.worktools.my.id](https://app.worktools.my.id) — build di `dist/`, deploy via [wrangler.jsonc](wrangler.jsonc) (`worktools-app`).
-- **Aplikasi Desktop Windows (Tauri v2):** Rilis `.exe` & `.msi` (`WorkTools` `v1.1.0`) dilengkapi jembatan TCP lokal Rust (`tauri_ai_http_request`, `tauri_ai_ensure_opencode`) agar OpenCode & Ollama berjalan bebas dari batasan CORS browser.
+- **Aplikasi Desktop Windows (Tauri v2):** Rilis `.exe` & `.msi` (`WorkTools` `v1.1.1`) dilengkapi jembatan TCP lokal Rust (`tauri_ai_http_request`, `tauri_ai_ensure_opencode`) dengan hardening keamanan agar OpenCode & Ollama berjalan bebas dari batasan CORS browser.
 
 ---
 
@@ -158,3 +158,8 @@ npm run desktop:build
 ## Privasi & Keamanan
 - Seluruh pemrosesan berkas (PDF, gambar, redaksi, konversi, arsip ZIP, dan mode Built-in AI Chat) berjalan **100% lokal di perangkat Anda** tanpa mengunggah file dokumen ke server eksternal.
 - Apabila Anda mengaktifkan provider AI eksternal pada **AI Chat Studio** (misalnya **Antigravity / Google Gemini API** atau endpoint **OpenCode** jarak jauh), hanya teks prompt/metadata instruksi yang dikirim ke penyedia model yang Anda pilih. Secara bawaan, API key dan password hanya disimpan sementara di `sessionStorage` dan otomatis terhapus saat tab ditutup (tersedia opsi *opt-in* untuk menyimpannya di `localStorage`).
+- **Hardening Keamanan (`v1.1.1`):**
+  - **PDF.js Patched & Tersentralisasi:** Menggunakan `pdfjs-dist@6.5.438` melalui helper terpusat `loadPdfDocumentSafe` ([src/utils/pdfjs.ts](src/utils/pdfjs.ts)).
+  - **Tauri Rust Loopback Bridge:** Allowlist metode HTTP & port layanan AI lokal (`ALLOWED_AI_PORTS` atau port OpenCode yang dijalankan aplikasi), validasi CRLF/header RFC 7230, dukungan IPv6 `[::1]`, batas request 10 MB / response 16 MB, resolusi binary PATH absolut tanpa CWD, serta pembersihan child process saat aplikasi ditutup.
+  - **Sandbox MCP & CLI:** Isolasi path kanonik melalui `TENGGOO_WORKSPACE_ROOT` / `TENGGOO_ALLOWED_ROOTS` (fallback temp dibatasi ke `<tmpdir>/worktools`), batas `stdin` JSON-RPC 10 MB, dan batas baca input 200 MB/file (500 MB total).
+  - **Batas Worker/Pipeline & Header Web:** Validasi impor `.pipeline.json` (maks 1 MB & 25 langkah), batas input Ghostscript WASM (150 MB), serta header produksi `Strict-Transport-Security` (HSTS) dan CSP ketat termasuk `frame-src 'self' blob:`.

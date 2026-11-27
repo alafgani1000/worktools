@@ -64,9 +64,9 @@ tenggoo_pdf/
 │   └── SKILL.md                     # Daftar lengkap 38 tool & skema untuk AI Agent
 ├── src/
 │   ├── agent/
-│   │   ├── cli.ts                   # Parser CLI (list, describe, run, pipeline)
-│   │   ├── fileIO.ts                # Pembaca/penulis file disk <-> VirtualFile
-│   │   ├── mcp-server.ts            # Implementasi JSON-RPC 2.0 (39 MCP tools)
+│   │   ├── cli.ts                   # Parser CLI (list, describe, run, pipeline) + validasi --steps-file
+│   │   ├── fileIO.ts                # Pembaca/penulis file disk <-> VirtualFile (canonical sandbox + limit 200 MB)
+│   │   ├── mcp-server.ts            # Implementasi JSON-RPC 2.0 (39 MCP tools, stdin cap 10 MB, sandbox)
 │   │   └── toolkit.test.ts          # Test suite terpadu (unit, CLI, MCP, AI parser & security)
 │   ├── App.tsx                      # App shell, header ringkas, hash routing, transfer file+steps ke Pipeline
 │   ├── components/
@@ -94,11 +94,11 @@ tenggoo_pdf/
 │   │       └── utilityTools.ts      # 6 headless tools Utilitas
 │   ├── utils/
 │   │   ├── aiIntentParser.ts        # Offline intent parser, LLM tool schemas (38+1), & validasi step I/O
-│   │   ├── pdfjs.ts                 # Konfigurasi worker pdfjs-dist untuk browser
+│   │   ├── pdfjs.ts                 # Konfigurasi worker pdfjs-dist@6.5.x & helper loadPdfDocumentSafe()
 │   │   └── virtualFileWeb.ts        # Konversi File API browser <-> VirtualFile & download ZIP
 │   └── workers/
-│       └── pdfCompress.worker.ts    # Kompresi Ghostscript WASM di Web Worker
-├── src-tauri/                       # Aplikasi Desktop native Tauri v2 + Rust loopback HTTP bridge
+│       └── pdfCompress.worker.ts    # Kompresi Ghostscript WASM (-dSAFER & batas input 150 MB)
+├── src-tauri/                       # Aplikasi Desktop native Tauri v2 + hardened Rust loopback bridge (allowlist port AI & cleanup)
 ├── vite.config.ts                   # Build Web App -> dist/
 ├── vite.landing.config.ts           # Build Landing Page -> dist-landing/
 ├── wrangler.jsonc                   # Worker `worktools-app` -> app.worktools.my.id
@@ -146,6 +146,9 @@ npm run dev:landing   # Landing Page
 
 # Automated tests (38 tool, pipeline, CLI, MCP, AI parser & keamanan)
 npm test
+
+# Rust unit tests (Tauri loopback bridge & keamanan header/port)
+cargo test --manifest-path src-tauri/Cargo.toml
 
 # Linting & Build produksi
 npm run lint

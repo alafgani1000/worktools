@@ -3,8 +3,13 @@ import { basename, dirname, extname, isAbsolute, relative, resolve } from 'node:
 import { guessMimeType, sanitizeFileName } from '../core/types.ts';
 import type { VirtualFile } from '../core/types.ts';
 
+export const MAX_INPUT_FILE_BYTES = 200 * 1024 * 1024;
+export const MAX_TOTAL_INPUT_BYTES = 500 * 1024 * 1024;
+
 export interface FileIOOptions {
   allowedRoots?: string[];
+  maxFileBytes?: number;
+  maxTotalBytes?: number;
 }
 
 function normalizeForCompare(target: string): string {
@@ -51,7 +56,7 @@ export async function assertPathAllowed(
   for (const root of allowedRoots) {
     const realRoot = await resolveNearestRealPath(root);
     if (isPathWithinRoot(realCandidate, realRoot)) {
-      return absPath;
+      return realCandidate;
     }
   }
 
@@ -62,16 +67,36 @@ export async function readInputPaths(
   inputPaths: string[],
   options?: FileIOOptions,
 ): Promise<VirtualFile[]> {
+  const maxFileBytes = options?.maxFileBytes ?? MAX_INPUT_FILE_BYTES;
+  const maxTotalBytes = options?.maxTotalBytes ?? MAX_TOTAL_INPUT_BYTES;
   const loaded: VirtualFile[] = [];
+  let totalBytes = 0;
+
   for (const rawPath of inputPaths) {
-    const absPath = await assertPathAllowed(rawPath, options?.allowedRoots);
-    const buffer = await readFile(absPath);
-    const name = sanitizeFileName(basename(absPath), 'input.bin');
+    const safePath = await assertPathAllowed(rawPath, options?.allowedRoots);
+    const info = await stat(safePath);
+    if (!info.isFile()) {
+      throw new Error(`Input path is not a regular file: "${safePath}".`);
+    }
+    if (info.size > maxFileBytes) {
+      throw new Error(
+        `Input file "${basename(safePath)}" (${info.size} bytes) exceeds maximum allowed limit (${maxFileBytes} bytes).`,
+      );
+    }
+    totalBytes += info.size;
+    if (totalBytes > maxTotalBytes) {
+      throw new Error(
+        `Total input file size exceeds maximum allowed limit (${maxTotalBytes} bytes).`,
+      );
+    }
+
+    const buffer = await readFile(safePath);
+    const name = sanitizeFileName(basename(safePath), 'input.bin');
     loaded.push({
       name,
       mimeType: guessMimeType(name),
       bytes: new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength),
-      metadata: { sourcePath: absPath },
+      metadata: { sourcePath: safePath },
     });
   }
   return loaded;

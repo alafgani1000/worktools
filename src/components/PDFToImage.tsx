@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { FileDropzone } from './FileDropzone';
-import { pdfjsLib, renderPageToCanvas } from '../utils/pdfjs';
+import { loadPdfDocumentSafe, renderPageToCanvas } from '../utils/pdfjs';
 import JSZip from 'jszip';
 import { 
   FileImage, 
@@ -37,7 +37,7 @@ export const PDFToImage: React.FC = () => {
 
     try {
       const arrayBuffer = await selectedFile.arrayBuffer();
-      const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) });
+      const loadingTask = loadPdfDocumentSafe(arrayBuffer);
       const pdfDoc = await loadingTask.promise;
       const numPages = pdfDoc.numPages;
 
@@ -86,7 +86,7 @@ export const PDFToImage: React.FC = () => {
     if (!file) return;
     try {
       const arrayBuffer = await file.arrayBuffer();
-      const pdfDoc = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
+      const pdfDoc = await loadPdfDocumentSafe(arrayBuffer).promise;
       const canvas = await renderPageToCanvas(pdfDoc, pageNum, qualityScale);
       
       const mime = format === 'png' ? 'image/png' : 'image/jpeg';
@@ -116,7 +116,7 @@ export const PDFToImage: React.FC = () => {
 
     try {
       const arrayBuffer = await file.arrayBuffer();
-      const pdfDoc = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
+      const pdfDoc = await loadPdfDocumentSafe(arrayBuffer).promise;
       const baseName = file.name.replace(/\.[^/.]+$/, '');
       const mime = format === 'png' ? 'image/png' : 'image/jpeg';
       const ext = format === 'png' ? 'png' : 'jpg';
